@@ -1,0 +1,42 @@
+RBTree.py -- Red/Black Balanced Binary Trees with Dictionary Interface
+
+Introduction:
+
+This code adapted from C source from
+Thomas Niemann's Sorting and Searching Algorithms: A Cookbook
+
+From the title page:
+    Permission to reproduce this document, in whole or in part, is 
+    given provided the original web site listed below is referenced, 
+    and no additional restrictions apply. Source code, when part of 
+    a software project, may be used freely without reference to the 
+    author.
+
+-------------------------------------------------------------------------------
+Usage:
+
+RBTree.py defines a class, RBDict, which creates dictionary-like objects
+implemented using a Red/Black tree (a form of balanced binary tree). 
+
+Red/Black trees, I'm told, remain "nearly" balanced, and evidently the
+algorithm is somehow inferior to the AVL tree.  However, Red/Black trees
+have similar performance and the algorithm is much simpler IMHO.
+
+Anyway, an RBDict instance behaves in almost every way like a dictionary;
+however the .keys() method returns ordered keys instead of the "random"
+keys returned by the normal (hashed) dictionary.
+
+RBTree.py also contains a class, RBTree, which defines the tree without
+the dictionary interface; RBDict is a subclass of RBTree, adding the 
+interface goodies.
+
+-------------------------------------------------------------------------------
+Installation:
+
+RBTree.py contains an internal Distutils-based installer; just run:
+
+    python RBTree.py install
+
+(as root/Administrator if needed) and you're done.
+
+-------------------------------------------------------------------------------
