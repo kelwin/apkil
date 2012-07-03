@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import copy
 
 from logger import log
 
@@ -39,6 +40,25 @@ class SmaliTree(object):
         # print repr(self.smali_files)
         log("SmaliTree parsed!")
 
+    def get_class(self, class_name):
+        result = [c for c in self.classes if c.name == class_name]
+        if result:
+            return result[0]
+        else:
+            return None
+    
+    def add_class(self, class_node):
+        if [c for c in self.classes if c.name == class_node.name]:
+            print "Class %s alreasy exsits!" % class_node.name
+            return False
+        else:
+            self.classes.append(copy.deepcopy(class_node))
+            return True
+
+    def remove_class(self, class_node):
+        # self.classes.del()
+        pass
+
     def save(self, new_foldername):
         if not os.path.exists(new_foldername):
             os.makedirs(new_foldername)
@@ -48,6 +68,12 @@ class SmaliTree(object):
     def export_apk(self):
         self.save("./out")
         pass
+
+    def get_insn35c(self, opcode_name, method_desc):
+        result = []
+        for c in self.classes:
+            result.extend(c.get_insn35c(opcode_name, method_desc))
+        return result
 
 
 class ClassNode(object):
@@ -133,9 +159,12 @@ class ClassNode(object):
         # .source
         # self.buf.append(".source %s" % (self.source, ))
         # .field
-        self.buf.extend([f.buf for f in self.fields])
+        for f in self.fields:
+            f.reload()
+            self.buf.append(f.buf)
         # .method
         for m in self.methods:
+            m.reload()
             self.buf.extend(m.buf)
 
     def save(self, new_foldername):
@@ -149,6 +178,13 @@ class ClassNode(object):
         f = open(filename, 'w')
         f.write('\n'.join(self.buf))
         f.close()
+
+    def get_insn35c(self, opcode_name, method_desc):
+        result = []
+        for m in self.methods:
+            result.extend(m.get_insn35c(opcode_name, method_desc))
+        return result
+
 
 
 class FieldNode(object):
@@ -184,7 +220,7 @@ class FieldNode(object):
         self.buf = "%s %s %s:%s" % \
                 (".field", ' '.join(self.access), self.name, \
                 self.descriptor)
-        if self.value: self.buf += " = self.value"
+        if self.value: self.buf += " = %s" % self.value
 
 class MethodNode(object):
 
@@ -248,7 +284,43 @@ class MethodNode(object):
         log("MethodNode: " + self.name + " parsed!")
 
     def reload(self):
-        pass
+        self.buf = []
+        for i in self.insns:
+            i.reload()
+            self.buf.append(i.buf)
+        # insert labels and tries
+        # sort the labels by index
+        count = 0
+        labels = self.labels.values()
+        from operator import attrgetter
+        labels = sorted(labels, key=attrgetter('index'))
+        for l in labels:
+            self.buf.insert(l.index + count, l.buf)
+            count += 1
+            if l.try_node:
+                self.buf.insert(l.index + count, l.try_node.buf)
+                count += 1
+        self.buf.insert(0, ".registers %d" % self.registers)
+        self.buf.insert(0, ".method %s %s" % \
+                (' '.join(self.access), self.descriptor))
+        self.buf.append(".end method")
+
+    def get_insn_by_index(self, index):
+        if index < 0 or index >= len(self.insns): return None
+        return self.insns[index]
+
+    def get_insn35c(self, opcode_name, method_desc):
+        result = []
+        for i in self.insns:
+            if i.fmt == "35c" and i.opcode_name == opcode_name and \
+                    i.obj.method_desc == method_desc:
+                result.append(i)
+        return result
+
+
+    def replace_insn35c(self):
+        for i in self.insns:
+            i.replace()
     
 
 class InsnNode(object):
@@ -272,10 +344,18 @@ class InsnNode(object):
         if INSN_FMT.has_key(self.opcode_name):
             self.fmt = INSN_FMT[self.opcode_name]
 
+        if self.fmt == "35c":
+            self.obj = Insn35c(line)
+
         log("InsnNode: " + self.opcode_name + " parsed!")
 
     def reload(self):
-        pass
+        if self.obj:
+            self.obj.reload()
+            self.buf = self.obj.buf
+        else:
+            pass
+
 
 class TryNode(object):
 
@@ -296,6 +376,7 @@ class TryNode(object):
         self.buf = line
         self.start = start
         self.end = end
+        end.try_node = self
         self.handler = handler
         segs = self.buf.split()
         self.exception = segs[1]
@@ -309,6 +390,7 @@ class LabelNode(object):
         self.name = ""
         self.buf = ""
         self.index = -1
+        self.try_node = None
 
         self.__parse(line, index)
 
@@ -330,6 +412,7 @@ class Insn35c(object):
 
     def __init__(self, line):
         self.buf = ""
+        self.opcode_name = ""
         self.registers = []
         self.method_descriptor = ""
 
@@ -345,8 +428,16 @@ class Insn35c(object):
         tmp = tmp.replace('}', '')
         tmp = tmp.replace(',', '')
         segs = tmp.split()
+        self.opcode_name = segs[0]
         self.registers = segs[1:-1]
-        self.method_descriptor = segs[-1]
+        self.method_desc = segs[-1]
 
     def reload(self):
-        pass
+        self.buf = "%s {%s}, %s" % \
+                (self.opcode_name, ", ".join(self.registers), \
+                self.method_desc)
+
+    def replace(self, opcode_name, method_desc):
+        self.opcode_name = opcode_name
+        self.method_desc = method_desc
+        
