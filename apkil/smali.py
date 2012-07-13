@@ -250,14 +250,16 @@ class MethodNode(object):
         self.descriptor = segs[-1]
         self.name = self.descriptor.split('(', 1)[0]
 
+        start = 1
         # .registers <register-num>
         segs = self.buf[1].split()
-        # segs[0] == ".registers"
-        self.registers = int(segs[1])
+        if segs[0] == ".registers":
+            self.registers = int(segs[1])
+            start = 2
 
         index = 0
         try_node_cache = []
-        for line in self.buf[2:-1]:
+        for line in self.buf[start:-1]:
             segs = line.split()
             # :<label-name>
             if segs[0][0] == ":":
@@ -297,7 +299,8 @@ class MethodNode(object):
             if l.try_node:
                 self.buf.insert(l.index + count, l.try_node.buf)
                 count += 1
-        self.buf.insert(0, ".registers %d" % self.registers)
+        if self.registers > 0:
+            self.buf.insert(0, ".registers %d" % self.registers)
         self.buf.insert(0, ".method %s %s" % \
                 (' '.join(self.access), self.descriptor))
         self.buf.append(".end method")

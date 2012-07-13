@@ -20,7 +20,6 @@ from logger import log
 # 	 }
 # }
 
-
 BASIC_TYPES = {
         'V': "void",
         'Z': "boolean",
@@ -33,8 +32,8 @@ BASIC_TYPES = {
         'D': "double"
         }
 
-
 CLASS_NAME = "org/honeynet/apimonitor/APIMonitor"
+
 PKG_PREFIX = "droidbox"
 LOG_TAG = "DroidBox"
 
@@ -54,6 +53,8 @@ class APIMonitor(object):
     def __init__(self, method_descs):
         self.method_descs = method_descs
         self.stub_classes = {}
+        self.method_map = {}
+        self.class_map = {}
         for m in method_descs:
             segs = m.rsplit("->", 1)
             if self.stub_classes.has_key(segs[0]):
@@ -61,7 +62,16 @@ class APIMonitor(object):
             else:
                 stub_class = StubClass(segs[0])
                 self.stub_classes[segs[0]] = stub_class
+                self.class_map[segs[0]] = "L" + PKG_PREFIX + "/" + segs[0][1:]
             stub_class.add(segs[1])
+            i = m.find('(')
+            self.method_map[m] = "L" + PKG_PREFIX + "/" + m[1:i + 1] + \
+                    segs[0] + m[i + 1:]
+# Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
+# Ldroidbox/android/widget/TextView;->setText(Landroid/widget/TextView;Ljava/lang/CharSequence;)V"
+
+    def get_class_descs(self):
+        return self.class_map.values()
 
     def __repr__(self):
         return "%s" % \
@@ -89,7 +99,7 @@ class StubClass(object):
 
     def gen(self):
         self.buf = []
-        self.buf.append("package %s;" % self.package)
+        self.buf.append("package %s;" % self.package.replace('/', '.'))
         self.buf.append("import android.util.Log;")
         # self.buf.append("import %s;" % self.class_desc[1:-1])
         self.buf.append("public class %s {" % self.class_name)
@@ -153,7 +163,17 @@ class StubMethod(object):
                 ', '.join( \
                     ["%s p%d" % \
                         (self.paras[i], i) for i in range(len(self.paras))])))
+        self.buf.append("try {")
         self.buf.append("p0.%s(%s);" % (self.name, ', '.join(["p%d" % i for i in
             range(1, len(self.paras))])))
+
+        for i in range(1, len(self.paras)):
+            if self.paras[i] == "java.lang.String":
+                self.buf.append("Log.v(TAG, p%d);" % i)
+
+
+        self.buf.append("} catch (Exception e) {")
+        self.buf.append("e.printStackTrace();")
+        self.buf.append("}")
         self.buf.append("}")
 
