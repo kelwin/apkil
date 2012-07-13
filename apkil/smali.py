@@ -67,7 +67,6 @@ class SmaliTree(object):
 
     def export_apk(self):
         self.save("./out")
-        pass
 
     def get_insn35c(self, opcode_name, method_desc):
         result = []
@@ -184,8 +183,6 @@ class ClassNode(object):
         for m in self.methods:
             result.extend(m.get_insn35c(opcode_name, method_desc))
         return result
-
-
 
 class FieldNode(object):
 

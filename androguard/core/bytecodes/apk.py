@@ -101,7 +101,7 @@ class ChilkatZip :
         e.Inflate( s )
         return s.getBytes()
 
-def sign_apk(filename, keystore, storepass, alias_name) :
+def sign_apk(filename, keystore, alias_name, storepass) :
     from subprocess import Popen, PIPE, STDOUT
   # jarsigner -verbose -sigalg MD5withRSA -digestalg SHA1 -keystore tmp/androguard.androtrace tmp/toto.apk alias_name
     compile = Popen([ androconf.CONF["PATH_JARSIGNER"],

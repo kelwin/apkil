@@ -10,7 +10,9 @@ from subprocess import call
 def method_to_monitor(method_desc):
 # Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
 # Lorg/honeynet/apimonitor/APIMonitor;->android_widget_TextView__setText(Landroid/widget/TextView;Ljava/lang/CharSequence;)V
+    class_name = "org/honeynet/apimonitor/APIMonitor;"
     return ""
+
 MONITOR_CLASS = "Lorg/honeynet/apimonitor/APIMonitor;"
 
 M_APK = "examples/APIMonitor.apk"
