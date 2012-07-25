@@ -14,6 +14,18 @@ INSN_FMT = {
         "invoke-interface": "35c"
         }
 
+BASIC_TYPES = {
+        'V': "void",
+        'Z': "boolean",
+        'B': "byte",
+        'S': 'short',
+        'C': "char",
+        'I': "int",
+        'J': "long",
+        'F': "float",
+        'D': "double"
+        }
+
 class SmaliTree(object):
 
     def __init__(self, foldername):
@@ -77,7 +89,7 @@ class SmaliTree(object):
 
 class ClassNode(object):
 
-    def __init__(self, filename):
+    def __init__(self, filename=None):
         self.buf = []
         self.filename = "" 
         self.name = ''
@@ -91,7 +103,8 @@ class ClassNode(object):
         self.annotations = []
         self.debugs = []
 
-        self.__parse(filename)
+        if filename:
+            self.__parse(filename)
 
     def __repr__(self):
         return  "Class: %s %s << %s\n%s%s" % \
@@ -166,6 +179,21 @@ class ClassNode(object):
             m.reload()
             self.buf.extend(m.buf)
 
+    def set_name(self, name):
+        self.name = name
+    
+    def set_super_name(self, super_name):
+        self.super_name = super_name
+    
+    def add_field(self, field):
+        self.fields.append(field)
+
+    def add_method(self, method):
+        if type(method) == list:
+            self.methods.extend(method)
+        else:
+            self.methods.append(method)
+
     def save(self, new_foldername):
         self.reload()
         path, filename = os.path.split(self.name[1:-1])
@@ -186,14 +214,15 @@ class ClassNode(object):
 
 class FieldNode(object):
 
-    def __init__(self, line):
+    def __init__(self, line=None):
         self.buf = ""
         self.name = ""
         self.access = []
         self.descriptor = ""
         self.value = None
 
-        self.__parse(line)
+        if line:
+            self.__parse(line)
 
     def __repr__(self):
         return "    Field: %s %s %s%s\n" % \
@@ -212,6 +241,22 @@ class FieldNode(object):
             self.name, self.descriptor = segs[-3].split(':')
             self.value = segs[-1]
         log("FieldNode: " + self.name + " parsed!")
+
+    def set_name(self, name):
+        self.name = name
+
+
+    def add_access(self, access):
+        if type(access) == list:
+            self.access.extend(access)
+        else:
+            self.access.append(access)
+
+    def set_desc(self, desc):
+        self.descriptor = desc
+
+    def set_value(self, value):
+        self.value = value
     
     def reload(self):
         self.buf = "%s %s %s:%s" % \
@@ -221,17 +266,21 @@ class FieldNode(object):
 
 class MethodNode(object):
 
-    def __init__(self, lines):
+    def __init__(self, lines=None):
         self.name = ""
         self.buf = []
         self.access = []
         self.descriptor = ""
+        self.paras = []
+        self.ret = ""
         self.registers = 0
         self.insns = []
         self.labels = {}
         self.tries = []
+        self.is_constructor = False
 
-        self.__parse(lines)
+        if lines:
+            self.__parse(lines)
 
 
     def __repr__(self):
@@ -248,7 +297,7 @@ class MethodNode(object):
         segs = self.buf[0].split()
         self.access = segs[1:-1]
         self.descriptor = segs[-1]
-        self.name = self.descriptor.split('(', 1)[0]
+        self.__parse_desc()
 
         start = 1
         # .registers <register-num>
@@ -266,7 +315,9 @@ class MethodNode(object):
                 label = LabelNode(line, index)
                 self.labels[label.name] = label
             # .catch <classname> {<label1> .. <label2>} <label3>
-            elif segs[0][0] == '.' and segs[0][1:] == "catch":
+            # .catchall {<label1> .. <label2>} <label3>
+            elif segs[0][0] == '.' and \
+                    (segs[0][1:] == "catch" or segs[0][1:] == "catchall"):
                 try_node_cache.append(line)
             else:
                 self.insns.append(InsnNode(line))
@@ -274,15 +325,44 @@ class MethodNode(object):
 
         for line in try_node_cache:
             segs = line.split()
-            start = self.labels[segs[2][2:]]
-            end = self.labels[segs[4][1:-1]]
+            start = self.labels[segs[-4][2:]]
+            end = self.labels[segs[-2][1:-1]]
             handler = self.labels[segs[-1][1:]]
             self.tries.append(TryNode(line, start, end, handler))
         try_node_cache = []
 
+        if self.name == "<init>":
+            self.is_constructor = True
         log("MethodNode: " + self.name + " parsed!")
 
+    def __parse_desc(self):
+        print "@@"+self.descriptor
+        self.name = self.descriptor.split('(', 1)[0]
+        p1 = self.descriptor.find('(')
+        p2 = self.descriptor.find(')')
+        self.ret = TypeNode(self.descriptor[p2 + 1:])
+        self.paras = []
+        paras = self.descriptor[p1 + 1:p2]
+        index = 0
+        dim = 0
+        while index < len(paras):
+            c = paras[index]
+            if c == '[':
+                dim += 1
+                index += 1
+            elif BASIC_TYPES.has_key(c):
+                self.paras.append(TypeNode(paras[index - dim:index + 1]))
+                index += 1
+                dim = 0
+            else:
+                tmp = paras.find(';', index)
+                self.paras.append(TypeNode(paras[index - dim:tmp + 1]))
+                index = tmp + 1
+                dim = 0
+
     def reload(self):
+        self.__parse_desc()
+
         self.buf = []
         for i in self.insns:
             i.reload()
@@ -296,9 +376,10 @@ class MethodNode(object):
         for l in labels:
             self.buf.insert(l.index + count, l.buf)
             count += 1
-            if l.try_node:
-                self.buf.insert(l.index + count, l.try_node.buf)
+            for t in l.tries:
+                self.buf.insert(l.index + count, t.buf)
                 count += 1
+
         if self.registers > 0:
             self.buf.insert(0, ".registers %d" % self.registers)
         self.buf.insert(0, ".method %s %s" % \
@@ -317,6 +398,38 @@ class MethodNode(object):
                 result.append(i)
         return result
 
+    def set_name(self, name):
+        self.name = name
+
+    def set_desc(self, desc):
+        self.descriptor = desc
+        self.__parse_desc()
+
+    def add_para(self, para, index=0):
+        self.paras.insert(index, para)
+        self.descriptor = self.name + '('
+        for p in self.paras:
+            self.descriptor += p.get_desc()
+        self.descriptor += ')'
+        self.descriptor += self.ret.get_desc()
+
+    def add_access(self, access):
+        if type(access) == list:
+            self.access.extend(access)
+        else:
+            self.access.append(access)
+
+    def set_registers(self, registers):
+        self.registers = registers
+
+    def add_insn(self, insn):
+        if type(insn) == list:
+            self.insns.extend(insn)
+        else:
+            self.insns.append(insn)
+
+    def add_label(self, label):
+        pass
 
     def replace_insn35c(self):
         for i in self.insns:
@@ -325,13 +438,14 @@ class MethodNode(object):
 
 class InsnNode(object):
 
-    def __init__(self, line):
+    def __init__(self, line=None):
         self.buf = ""
         self.opcode_name = ""
         self.fmt = ""
         self.obj = None
 
-        self.__parse(line)
+        if line:
+            self.__parse(line)
 
     def __repr__(self, line_number=""):
         return "%s\n" % \
@@ -376,7 +490,7 @@ class TryNode(object):
         self.buf = line
         self.start = start
         self.end = end
-        end.try_node = self
+        end.tries.append(self)
         self.handler = handler
         segs = self.buf.split()
         self.exception = segs[1]
@@ -390,7 +504,7 @@ class LabelNode(object):
         self.name = ""
         self.buf = ""
         self.index = -1
-        self.try_node = None
+        self.tries = []
 
         self.__parse(line, index)
 
@@ -440,4 +554,45 @@ class Insn35c(object):
     def replace(self, opcode_name, method_desc):
         self.opcode_name = opcode_name
         self.method_desc = method_desc
-        
+
+
+class TypeNode(object):
+
+    def __init__(self, desc):
+        print "***"+desc
+        self.type_ = ""
+        self.dim = 0
+        self.basic = None
+        self.void = None
+
+        self.__parse(desc)
+
+    def __parse(self, desc):
+        self.dim = desc.rfind('[') + 1
+        desc = desc[self.dim:]
+
+        if BASIC_TYPES.has_key(desc[0]):
+            self.type_ = desc[0]
+            self.basic = True
+            if self.type_ == 'V':
+                self.void = True
+            else:
+                self.void = False
+        elif desc[0] == 'L':
+            self.type_ = desc
+            self.basic = False
+
+    def __repr__(self):
+        return self.dim * '[' + self.type_
+
+    def get_desc(self):
+        return self.dim * '[' + self.type_
+
+    def get_java(self):
+        if self.basic:
+            if self.void:
+                return ""
+            else:
+                return BASIC_TYPES[self.type_] + self.dim * "[]"
+        else:
+            return self.type_[1:-1].replace('/', '.') + self.dim * "[]"

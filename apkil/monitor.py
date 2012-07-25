@@ -4,6 +4,7 @@
 import os
 
 from logger import log
+from smali import ClassNode, MethodNode, FieldNode, InsnNode, TypeNode
 
 # Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
 # Lorg/honeynet/apimonitor/APIMonitor;->android_widget_TextView__setText(Landroid/widget/TextView;Ljava/lang/CharSequence;)V
@@ -20,33 +21,8 @@ from logger import log
 # 	 }
 # }
 
-BASIC_TYPES = {
-        'V': "void",
-        'Z': "boolean",
-        'B': "byte",
-        'S': 'short',
-        'C': "char",
-        'I': "int",
-        'J': "long",
-        'F': "float",
-        'D': "double"
-        }
-
-CLASS_NAME = "org/honeynet/apimonitor/APIMonitor"
-
 PKG_PREFIX = "droidbox"
 LOG_TAG = "DroidBox"
-
-def smali2java_type(t):
-    if BASIC_TYPES.has_key(t[0]):
-        return BASIC_TYPES[t[0]]
-    elif t[0] == 'L':
-        return t[1:-1].replace('/', '.')
-    elif t[0] == '[':
-        d = t.count('[')
-        return smali2java_type(t[d:]) + d * "[]"
-    else:
-        return ""
 
 class APIMonitor(object):
 
@@ -60,120 +36,54 @@ class APIMonitor(object):
             if self.stub_classes.has_key(segs[0]):
                 stub_class = self.stub_classes[segs[0]]
             else:
-                stub_class = StubClass(segs[0])
+                stub_class = ClassNode()
+                stub_class.set_name("L" + PKG_PREFIX + "/" + segs[0][1:])
+                stub_class.set_super_name("Ljava/lang/Object;")
+
+                # .field private static final TAG:Ljava/lang/String; = "DroidBox"
+                f = FieldNode()
+                f.set_desc("Ljava/lang/String;")
+                f.add_access(["private", "static", "final"])
+                f.set_name("TAG")
+                f.set_value('"' + LOG_TAG + '"')
+                stub_class.add_field(f)
+
                 self.stub_classes[segs[0]] = stub_class
                 self.class_map[segs[0]] = "L" + PKG_PREFIX + "/" + segs[0][1:]
-            stub_class.add(segs[1])
+
+                #.method public constructor <init>()V
+                #    .registers 1
+                #    invoke-direct {p0}, Ljava/lang/Object;-><init>()V
+                #    return-void
+                #.end method
+                method = MethodNode()
+                method.set_desc("<init>()V")
+                method.add_access(["public", "constructor"])
+                method.set_registers(1)
+                i1 = InsnNode("invoke-direct {p0}, Ljava/lang/Object;-><init>()V")
+                i2 = InsnNode("return-void")
+                method.add_insn([i1, i2])
+                stub_class.add_method(method)
+
+            # stub_class.add(segs[1])
+            # invoke-virtual {p0, p1}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
+            method = MethodNode()
+            method.set_desc(segs[1])
+            method.add_access(["public", "static"])
+            method.add_para(TypeNode(segs[0]))
+            method.set_registers(2)
+            i1 = InsnNode("invoke-virtual {p0, p1}, \
+                    Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V")
+            i2 = InsnNode("return-void")
+            method.add_insn([i1, i2])
+            stub_class.add_method(method)
+
             i = m.find('(')
             self.method_map[m] = "L" + PKG_PREFIX + "/" + m[1:i + 1] + \
                     segs[0] + m[i + 1:]
 # Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
 # Ldroidbox/android/widget/TextView;->setText(Landroid/widget/TextView;Ljava/lang/CharSequence;)V"
 
-    def get_class_descs(self):
-        return self.class_map.values()
-
     def __repr__(self):
-        return "%s" % \
-        (''.join([repr(c) for c in self.stub_classes.values()]), )
-
-    def export(self, foldername):
-        for c in self.stub_classes.values():
-            c.export(foldername)
-
-class StubClass(object):
-
-    def __init__(self, class_desc):
-        self.buf = [] 
-        segs = class_desc.rsplit('/', 1)
-        self.class_name = segs[1][:-1]
-        self.class_desc = class_desc
-        self.package = PKG_PREFIX + '/' + segs[0][1:] 
-        self.stub_methods = []
-
-    def __repr__(self):
-        return "%s\n%s\n" % (self.class_desc, self.buf)
-
-    def add(self, method_short_desc):
-        self.stub_methods.append(StubMethod(self.class_desc, method_short_desc))
-
-    def gen(self):
-        self.buf = []
-        self.buf.append("package %s;" % self.package.replace('/', '.'))
-        self.buf.append("import android.util.Log;")
-        # self.buf.append("import %s;" % self.class_desc[1:-1])
-        self.buf.append("public class %s {" % self.class_name)
-        self.buf.append("private static final String TAG = \"%s\";" % LOG_TAG)
-        for m in self.stub_methods:
-            m.gen()
-            self.buf.extend(m.buf)
-        self.buf.append("}")
-
-    def export(self, foldername):
-        path = os.path.join(foldername, self.package)
-        if not os.path.exists(path):
-            os.makedirs(path)
-        filename = os.path.join(path, self.class_name + ".java")
-        f = open(filename, 'w')
-        self.gen()
-        f.write('\n'.join(self.buf))
-        f.close()
-
-#setText(Ljava/lang/CharSequence;)V
-class StubMethod(object):
-
-    def __init__(self, class_desc, method_short_desc):
-        self.buf = []
-        self.class_desc = class_desc
-        self.method_short_desc = method_short_desc
-        p1 = self.method_short_desc.find('(')
-        p2 = self.method_short_desc.find(')')
-        self.name = self.method_short_desc[:p1] 
-        self.ret = smali2java_type(self.method_short_desc[p2 + 1:])
-        self.paras = []
-        self.__parse_paras(self.method_short_desc[p1 + 1:p2])
-
-    def __repr__(self):
-        return self.method_short_desc
-
-    def __parse_paras(self, paras):
-        self.paras = []
-        self.paras.append(smali2java_type(self.class_desc))
-        index = 0
-        dim = 0
-        while index < len(paras):
-            c = paras[index]
-            if c == '[':
-                dim += 1
-                index += 1
-            elif BASIC_TYPES.has_key(c):
-                self.paras.append(smali2java_type(paras[index - dim:index + 1]))
-                index += 1
-                dim = 0
-            else:
-                tmp = paras.find(';', index)
-                self.paras.append(smali2java_type(paras[index - dim:tmp + 1]))
-                index = tmp + 1
-                dim = 0
-
-    def gen(self):
-        self.buf = []
-        self.buf.append("public static %s %s(%s) {" % \
-                (self.ret, self.name, \
-                ', '.join( \
-                    ["%s p%d" % \
-                        (self.paras[i], i) for i in range(len(self.paras))])))
-        self.buf.append("try {")
-        self.buf.append("p0.%s(%s);" % (self.name, ', '.join(["p%d" % i for i in
-            range(1, len(self.paras))])))
-
-        for i in range(1, len(self.paras)):
-            if self.paras[i] == "java.lang.String":
-                self.buf.append("Log.v(TAG, p%d);" % i)
-
-
-        self.buf.append("} catch (Exception e) {")
-        self.buf.append("e.printStackTrace();")
-        self.buf.append("}")
-        self.buf.append("}")
+        pass
 

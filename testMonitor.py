@@ -23,6 +23,11 @@ from androguard.core.bytecodes import apk
 from apkil import smali, monitor, logger 
 from subprocess import call
 
+
+#j = monitor.JavaType("[[Landroid/adf/arae;")
+#print j.get_java_desc()
+#sys.exit(0)
+
 APK = "examples/DroidBoxTests.apk"
 DEX = "examples/DroidBoxTests.dex"
 SMALI_DIR = "examples/DroidBoxTests_smali"
@@ -42,8 +47,17 @@ NEW_APK = "examples/new.apk"
 # sys.exit(0)
 
 API_LIST = [ "Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V", \
-        "Ljava/io/OutputStreamWriter;->write(Ljava/lang/String;)V"
-        ]
+"Landroid/content/ContentValues;->put(Ljava/lang/String;Ljava/lang/Integer;)V", \
+"Landroid/content/ContentValues;->put(Ljava/lang/String;Ljava/lang/String;)V", \
+"Ldroidbox/tests/DroidBoxTests;->openFileOutput(Ljava/lang/String;I)Ljava/io/FileOutputStream;",
+\
+"Ljava/io/OutputStreamWriter;->write(Ljava/lang/String;)V", \
+#"Ldroidbox/tests/DroidBoxTests;->openFileInput(Ljava/lang/String;)Ljava/io/FileInputStream;",
+\
+# hard to read
+#"Ljava/io/BufferedReader;->readLine()Ljava/lang/String;", \
+# new intent
+]
 
 TEMPLATE = "template/APIMonitor"
 EXPORT_FOLDER = "examples/APIMonitor/java"
@@ -53,11 +67,14 @@ if os.path.exists(EXPORT_FOLDER):
 shutil.copytree(TEMPLATE, EXPORT_FOLDER)
 m = monitor.APIMonitor(API_LIST)
 m.export(os.path.join(EXPORT_FOLDER, "src"))
+
+# sys.exit(0)
+
 call(args=["android", "update", "project", "--path", EXPORT_FOLDER])
 call(args=["ant", "debug", "-buildfile", \
     os.path.join(EXPORT_FOLDER, "build.xml")])
 
-# sys.exit(0)
+sys.exit(0)
 
 dex_file_path = os.path.join(EXPORT_FOLDER, "bin", "classes.dex")
 MONITOR_SMALI = "examples/APIMonitor/smali"
@@ -65,7 +82,6 @@ MONITOR_SMALI = "examples/APIMonitor/smali"
 call(args=['baksmali', '-b', '-o', MONITOR_SMALI, dex_file_path])
 m_s = smali.SmaliTree(MONITOR_SMALI)
 
-# print repr(m.method_map)
 
 for api in API_LIST:
     insns = s.get_insn35c("invoke-virtual", api)
@@ -73,8 +89,8 @@ for api in API_LIST:
         i.obj.replace("invoke-static", m.method_map[api])
 
 for c in m.get_class_descs():
-    print c
     s.add_class(m_s.get_class(c))
+
 s.save(NEW_OUT)
 call(args=['smali', '-a', '6', '-o', NEW_DEX, NEW_OUT])
 
