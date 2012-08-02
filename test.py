@@ -13,9 +13,13 @@ M_APK = "examples/APIMonitor.apk"
 M_DEX = "examples/APIMonitor.dex"
 M_SMALI = "examples/APIMonitor"
 
-APK = "examples/DroidBoxTests.apk"
-DEX = "examples/DroidBoxTests.dex"
-SMALI_DIR = "examples/DroidBoxTests"
+APK = "examples/APKILTests.apk"
+DEX = "examples/APKILTests.dex"
+SMALI_DIR = "examples/APKILTests"
+
+#APK = "examples/HelloChinese.apk"
+#DEX = "examples/HelloChinese.dex"
+#SMALI_DIR = "examples/HelloChinese"
 
 NEW_OUT = "examples/new"
 NEW_DEX = "examples/classes.dex"
@@ -31,41 +35,55 @@ s = smali.SmaliTree(SMALI_DIR)
 # print repr(s)
 # sys.exit(0)
 
-#m_a = apk.APK(M_APK)
-#dex_file = open(M_DEX, 'w')
-#dex_file.write(m_a.get_dex())
-#dex_file.close()
+#API_LIST = [ "Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V"]
+API_LIST = [ #"Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V", \
+#"Landroid/content/ContentValues;->put(Ljava/lang/String;Ljava/lang/Integer;)V", \
+#"Landroid/content/ContentValues;->put(Ljava/lang/String;Ljava/lang/String;)V", \
+"Landroid/content/Intent;-><init>(Ljava/lang/String;)V", \
+"Lapkil/tests/APKIL;->openFileOutput(Ljava/lang/String;I)Ljava/io/FileOutputStream;", \
+"Ljava/io/OutputStreamWriter;->write(Ljava/lang/String;)V", \
+"Lapkil/tests/APKIL;->openFileInput(Ljava/lang/String;)Ljava/io/FileInputStream;",
+"Ljava/io/BufferedReader;->readLine()Ljava/lang/String;", \
+]
+mo = monitor.APIMonitor(API_LIST)
 
-#call(args=['baksmali', '-b', '-o', M_SMALI, M_DEX])
-#m_s = smali.SmaliTree(M_SMALI)
-# print repr(s)
+for api in API_LIST:
+    segs = api.split("->")
+    if segs[1][:segs[1].find('(')] == "<init>":
+        for c in s.classes:
+            for m in c.methods:
+                for i in range(len(m.insns)):
+                    insn = m.insns[i]
+                    if insn.fmt == "35c" and \
+                       insn.opcode_name == "invoke-direct" and \
+                       insn.obj.method_desc == api :
+                        insn.obj.replace("invoke-static", mo.method_map[api])
+                        r = insn.obj.registers.pop(0)
+                        m.insert_insn(smali.InsnNode(\
+"move-result-object %s" % r), i + 1, 0)
+            
+    else:
+        for c in s.classes:
+            for m in c.methods:
+                for i in range(len(m.insns)):
+                    insn = m.insns[i]
+                    if insn.fmt == "35c" and \
+                       insn.opcode_name == "invoke-virtual" and \
+                       insn.obj.method_desc == api :
+                        insn.obj.replace("invoke-static", mo.method_map[api])
 
-#insns = s.get_insn35c("invoke-virtual","Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V")
-#new_opcode_name = "invoke-static"
-#new_method_desc = "Lorg/honeynet/apimonitor/APIMonitor;->android_widget_TextView__setText(Landroid/widget/TextView;Ljava/lang/CharSequence;)V"
-#for i in insns:
-#    i.obj.replace(new_opcode_name, new_method_desc)
-
-#s.add_class(m_s.get_class("Lorg/honeynet/apimonitor/APIMonitor;"))
-
-
-API_LIST = [ "Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V"]
-
-m = monitor.APIMonitor(API_LIST)
-for c in m.stub_classes.values():
+for c in mo.stub_classes.values():
     s.add_class(c)
     
-
-
 s.save(NEW_OUT)
-sys.exit(0)
+#sys.exit(0)
 
-call(args=['smali', '-a', '6', '-o', NEW_DEX, NEW_OUT])
+call(args=['smali', '-a', '7', '-o', NEW_DEX, NEW_OUT])
 
 new_dex = open(NEW_DEX).read();
 a.new_zip(filename=NEW_APK,
             deleted_files="(META-INF/.)", new_files = {
             "classes.dex" : new_dex } )
 apk.sign_apk( NEW_APK, \
-"/Users/kelwin/Dropbox/Backup/androguard", "androguard", "haimen!!" )
+"/Users/kelwin/Dropbox/Backup/apkil", "apkil", "apkilapkil" )
 

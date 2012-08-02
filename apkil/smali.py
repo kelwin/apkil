@@ -3,6 +3,7 @@
 
 import os
 import copy
+import sys
 
 from logger import log
 
@@ -45,6 +46,9 @@ class SmaliTree(object):
         for (path, dirs, files) in os.walk(self.foldername):
             for f in files:
                 name = os.path.join(path, f)
+                rel = os.path.relpath(name, self.foldername)
+                if rel.find("android") == 0:
+                    continue
                 ext = os.path.splitext(name)[1]
                 if ext != '.smali': continue
                 self.smali_files.append(name)
@@ -79,12 +83,14 @@ class SmaliTree(object):
 
     def export_apk(self):
         self.save("./out")
-
+    
+    """
     def get_insn35c(self, opcode_name, method_desc):
         result = []
         for c in self.classes:
             result.extend(c.get_insn35c(opcode_name, method_desc))
         return result
+    """
 
 
 class ClassNode(object):
@@ -182,6 +188,12 @@ class ClassNode(object):
     def set_name(self, name):
         self.name = name
     
+    def add_access(self, access):
+        if type(access) == list:
+            self.access.extend(access)
+        else:
+            self.access.append(access)
+
     def set_super_name(self, super_name):
         self.super_name = super_name
     
@@ -206,11 +218,13 @@ class ClassNode(object):
         f.write('\n'.join(self.buf))
         f.close()
 
+    """
     def get_insn35c(self, opcode_name, method_desc):
         result = []
         for m in self.methods:
             result.extend(m.get_insn35c(opcode_name, method_desc))
         return result
+    """
 
 class FieldNode(object):
 
@@ -244,7 +258,6 @@ class FieldNode(object):
 
     def set_name(self, name):
         self.name = name
-
 
     def add_access(self, access):
         if type(access) == list:
@@ -336,7 +349,6 @@ class MethodNode(object):
         log("MethodNode: " + self.name + " parsed!")
 
     def __parse_desc(self):
-        print "@@"+self.descriptor
         self.name = self.descriptor.split('(', 1)[0]
         p1 = self.descriptor.find('(')
         p2 = self.descriptor.find(')')
@@ -398,6 +410,9 @@ class MethodNode(object):
                 result.append(i)
         return result
 
+    def get_desc(self):
+        return self.descriptor
+
     def set_name(self, name):
         self.name = name
 
@@ -413,11 +428,24 @@ class MethodNode(object):
         self.descriptor += ')'
         self.descriptor += self.ret.get_desc()
 
+    def insert_insn(self, insn, index=0, direction=0):
+        self.insns.insert(index, insn)
+        for l in self.labels.values():
+            if l.index >= index + direction:
+                l.index += 1
+
     def add_access(self, access):
         if type(access) == list:
             self.access.extend(access)
         else:
             self.access.append(access)
+
+    def add_label(self, label):
+        if type(label) == list:
+            for l in label:
+                self.labels[l.name] = l
+        else:
+            self.labels[label.name] = label
 
     def set_registers(self, registers):
         self.registers = registers
@@ -427,9 +455,6 @@ class MethodNode(object):
             self.insns.extend(insn)
         else:
             self.insns.append(insn)
-
-    def add_label(self, label):
-        pass
 
     def replace_insn35c(self):
         for i in self.insns:
@@ -555,15 +580,18 @@ class Insn35c(object):
         self.opcode_name = opcode_name
         self.method_desc = method_desc
 
+    def set_regs(self, registers):
+        self.registers = registers
+
 
 class TypeNode(object):
 
     def __init__(self, desc):
-        print "***"+desc
         self.type_ = ""
         self.dim = 0
         self.basic = None
         self.void = None
+        self.words = 1
 
         self.__parse(desc)
 
@@ -578,6 +606,8 @@ class TypeNode(object):
                 self.void = True
             else:
                 self.void = False
+            if self.type_ == 'J' or self.type_ == 'D':
+                self.words = 2
         elif desc[0] == 'L':
             self.type_ = desc
             self.basic = False
