@@ -39,17 +39,21 @@ s = smali.SmaliTree(SMALI_DIR)
 API_LIST = [ #"Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V", \
 #"Landroid/content/ContentValues;->put(Ljava/lang/String;Ljava/lang/Integer;)V", \
 #"Landroid/content/ContentValues;->put(Ljava/lang/String;Ljava/lang/String;)V", \
-"Landroid/content/Intent;-><init>(Ljava/lang/String;)V", \
-"Lapkil/tests/APKIL;->openFileOutput(Ljava/lang/String;I)Ljava/io/FileOutputStream;", \
-"Ljava/io/OutputStreamWriter;->write(Ljava/lang/String;)V", \
-"Lapkil/tests/APKIL;->openFileInput(Ljava/lang/String;)Ljava/io/FileInputStream;",
-"Ljava/io/BufferedReader;->readLine()Ljava/lang/String;", \
+"static:Landroid/net/Uri;->parse(Ljava/lang/String;)Landroid/net/Uri;", \
+"constructor:Landroid/content/Intent;-><init>(Ljava/lang/String;)V", \
+"instance:Lapkil/tests/APKIL;->openFileOutput(Ljava/lang/String;I)Ljava/io/FileOutputStream;", \
+"instance:Ljava/io/OutputStreamWriter;->write(Ljava/lang/String;)V", \
+"instance:Lapkil/tests/APKIL;->openFileInput(Ljava/lang/String;)Ljava/io/FileInputStream;",
+"instance:Ljava/io/BufferedReader;->readLine()Ljava/lang/String;", \
 ]
 mo = monitor.APIMonitor(API_LIST)
 
 for api in API_LIST:
+    segs = api.split(':', 1)
+    method_type = segs[0]
+    api = segs[1]
     segs = api.split("->")
-    if segs[1][:segs[1].find('(')] == "<init>":
+    if method_type == "constructor":
         for c in s.classes:
             for m in c.methods:
                 for i in range(len(m.insns)):
@@ -62,13 +66,22 @@ for api in API_LIST:
                         m.insert_insn(smali.InsnNode(\
 "move-result-object %s" % r), i + 1, 0)
             
-    else:
+    elif method_type == "instance":
         for c in s.classes:
             for m in c.methods:
                 for i in range(len(m.insns)):
                     insn = m.insns[i]
                     if insn.fmt == "35c" and \
                        insn.opcode_name == "invoke-virtual" and \
+                       insn.obj.method_desc == api :
+                        insn.obj.replace("invoke-static", mo.method_map[api])
+    elif method_type == "static":
+        for c in s.classes:
+            for m in c.methods:
+                for i in range(len(m.insns)):
+                    insn = m.insns[i]
+                    if insn.fmt == "35c" and \
+                       insn.opcode_name == "invoke-static" and \
                        insn.obj.method_desc == api :
                         insn.obj.replace("invoke-static", mo.method_map[api])
 
