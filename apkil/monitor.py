@@ -5,10 +5,9 @@ import os
 
 from logger import log
 from smali import ClassNode, MethodNode, FieldNode, InsnNode, \
-                  TypeNode, LabelNode, TryNode
+                  TypeNode, LabelNode, TryNode, SmaliTree
 
 PKG_PREFIX = "droidbox"
-LOG_TAG = "DroidBox"
 
 class APIMonitor(object):
 
@@ -23,6 +22,51 @@ class APIMonitor(object):
     def __repr__(self):
         pass
 
+    def repackage(self, st):
+        for api in self.method_descs:
+            segs = api.split(':', 1)
+            method_type = segs[0]
+            api = segs[1]
+            segs = api.split("->")
+            if method_type == "constructor":
+                for c in st.classes:
+                    for m in c.methods:
+                        for i in range(len(m.insns)):
+                            insn = m.insns[i]
+                            if insn.fmt == "35c" and \
+                               insn.opcode_name == "invoke-direct" and \
+                               insn.obj.method_desc == api :
+                                insn.obj.replace("invoke-static", \
+                                        self.method_map[api])
+                                r = insn.obj.registers.pop(0)
+                                m.insert_insn(InsnNode(\
+"move-result-object %s" % r), i + 1, 0)
+            elif method_type == "instance":
+                for c in st.classes:
+                    for m in c.methods:
+                        for i in range(len(m.insns)):
+                            insn = m.insns[i]
+                            if insn.fmt == "35c" and \
+                               insn.opcode_name == "invoke-virtual" and \
+                               insn.obj.method_desc == api :
+                                insn.obj.replace("invoke-static", \
+                                        self.method_map[api])
+            elif method_type == "static":
+                for c in st.classes:
+                    for m in c.methods:
+                        for i in range(len(m.insns)):
+                            insn = m.insns[i]
+                            if insn.fmt == "35c" and \
+                               insn.opcode_name == "invoke-static" and \
+                               insn.obj.method_desc == api :
+                                insn.obj.replace("invoke-static", \
+                                        self.method_map[api])
+
+        for c in self.stub_classes.values():
+            st.add_class(c)
+
+        #st.add_class(helper.get_class(HELPER_CLASS))
+
     def add_stub_method(self, m):
         segs = m.split(':', 1)
         method_type = segs[0]
@@ -36,14 +80,6 @@ class APIMonitor(object):
             stub_class.set_name("L" + PKG_PREFIX + "/" + segs[0][1:])
             stub_class.add_access("public")
             stub_class.set_super_name("Ljava/lang/Object;")
-
-            # .field private static final TAG:Ljava/lang/String; = "DroidBox"
-            # f = FieldNode()
-            # f.set_desc("Ljava/lang/String;")
-            # f.add_access(["private", "static", "final"])
-            # f.set_name("TAG")
-            # f.set_value('"' + LOG_TAG + '"')
-            # stub_class.add_field(f)
 
             self.stub_classes[segs[0]] = stub_class
             self.class_map[segs[0]] = "L" + PKG_PREFIX + "/" + segs[0][1:]
@@ -116,7 +152,6 @@ append(Ljava/lang/String;)Ljava/lang/StringBuilder;" % \
         method.add_insn(append_i)
         
         # print parameters
-        conds = []
         pi = 1
         for k in range(1, para_num):
             p = method.paras[k]
@@ -138,18 +173,11 @@ Ljava/lang/String;->valueOf(%s)Ljava/lang/String;" % \
                 method.add_insn(InsnNode("move-result-object v%d" % (ri + 1)))
                 method.add_insn(append_i)
             else:
-                cond_tag = len(method.insns)
-                conds.append(cond_tag)
-                method.add_insn(InsnNode("if-eqz p%d, :droidbox_cond_%d" %\
-                                         (pi, cond_tag)))
-                method.add_insn(InsnNode("invoke-virtual {p%d}, \
-%s->toString()Ljava/lang/String;" % (pi, p.get_desc())))
+                method.add_insn(InsnNode("invoke-static {p%d}, \
+Ldroidbox/apimonitor/Helper;->toString(Ljava/lang/Object;)Ljava/lang/String;" % (pi, )))
                 pi += 1
                 method.add_insn(InsnNode("move-result-object v%d" % (ri + 1)))
                 method.add_insn(append_i)
-                index = len(method.insns)
-                cond = LabelNode(":droidbox_goto_%d" % cond_tag, index)
-                method.add_label(cond)
 
             if k < para_num - 1:
                 method.add_insn(InsnNode("const-string v%d, \" | \"" % \
@@ -181,26 +209,17 @@ Ljava/lang/String;->valueOf(%s)Ljava/lang/String;" % \
                 method.add_insn(InsnNode("move-result-object v%d" % (ri + 1)))
                 method.add_insn(append_i)
             else:
-                cond_tag = len(method.insns)
-                conds.append(cond_tag)
-                method.add_insn(InsnNode("if-eqz v1, :droidbox_cond_%d" %\
-                                         cond_tag))
-                method.add_insn(InsnNode("invoke-virtual {v1}, \
-%s->toString()Ljava/lang/String;" % p.get_desc()))
+                method.add_insn(InsnNode("invoke-static {v1}, \
+Ldroidbox/apimonitor/Helper;->toString(Ljava/lang/Object;)Ljava/lang/String;"))
                 method.add_insn(InsnNode("move-result-object v%d" % (ri + 1)))
                 method.add_insn(append_i)
-                index = len(method.insns)
-                cond = LabelNode(":droidbox_goto_%d" % cond_tag, index)
-                method.add_label(cond)
 
-        method.add_insn(InsnNode("const-string v%d, \"DroidBox\"" % \
-                (ri + 1)))
         method.add_insn(InsnNode("invoke-virtual {v%d}, \
 Ljava/lang/StringBuilder;->toString()Ljava/lang/String;" % ri))
-        method.add_insn(InsnNode("move-result-object v%d" % (ri + 2)))
-        method.add_insn(InsnNode("invoke-static {v%d, v%d}, \
-Landroid/util/Log;->v(Ljava/lang/String;Ljava/lang/String;)I" % \
-                                 (ri + 1, ri + 2)))
+        method.add_insn(InsnNode("move-result-object v%d" % (ri + 1)))
+        method.add_insn(InsnNode("invoke-static {v%d}, \
+Ldroidbox/apimonitor/Helper;->log(Ljava/lang/String;)V" % \
+                                 (ri + 1, )))
         if not method.ret.void:
             if method.ret.basic:
                 if method.ret.words == 1:
@@ -235,16 +254,7 @@ Ljava/lang/Exception;->printStackTrace()V"))
                 method.add_insn(InsnNode("const/4 v1, 0x0"))
         method.add_insn(InsnNode("goto :droidbox_return"))
 
-        for t in conds:
-            index = len(method.insns)
-            cond = LabelNode(":droidbox_cond_%d" % t, index)
-            method.add_label(cond)
-            method.add_insn(InsnNode("const-string v%d, \"null\"" %\
-                                     (ri + 1)))
-            method.add_insn(append_i)
-            method.add_insn(InsnNode("goto :droidbox_goto_%d" % t))
-
-        method.set_registers(para_num + ri + 3)
+        method.set_registers(para_num + ri + 2)
         stub_class.add_method(method)
 
         i = m.find('(')
@@ -290,7 +300,6 @@ append(Ljava/lang/String;)Ljava/lang/StringBuilder;" % \
         method.add_insn(append_i)
         
         # print parameters
-        conds = []
         pi = 0
         for k in range(0, para_num):
             p = method.paras[k]
@@ -312,18 +321,11 @@ Ljava/lang/String;->valueOf(%s)Ljava/lang/String;" % \
                 method.add_insn(InsnNode("move-result-object v%d" % (ri + 1)))
                 method.add_insn(append_i)
             else:
-                cond_tag = len(method.insns)
-                conds.append(cond_tag)
-                method.add_insn(InsnNode("if-eqz p%d, :droidbox_cond_%d" %\
-                                         (pi, cond_tag)))
-                method.add_insn(InsnNode("invoke-virtual {p%d}, \
-%s->toString()Ljava/lang/String;" % (pi, p.get_desc())))
+                method.add_insn(InsnNode("invoke-static {p%d}, \
+Ldroidbox/apimonitor/Helper;->toString(Ljava/lang/Object;)Ljava/lang/String;" % (pi, )))
                 pi += 1
                 method.add_insn(InsnNode("move-result-object v%d" % (ri + 1)))
                 method.add_insn(append_i)
-                index = len(method.insns)
-                cond = LabelNode(":droidbox_goto_%d" % cond_tag, index)
-                method.add_label(cond)
 
             if k < para_num - 1:
                 method.add_insn(InsnNode("const-string v%d, \" | \"" % \
@@ -355,26 +357,17 @@ Ljava/lang/String;->valueOf(%s)Ljava/lang/String;" % \
                 method.add_insn(InsnNode("move-result-object v%d" % (ri + 1)))
                 method.add_insn(append_i)
             else:
-                cond_tag = len(method.insns)
-                conds.append(cond_tag)
-                method.add_insn(InsnNode("if-eqz v1, :droidbox_cond_%d" %\
-                                         cond_tag))
-                method.add_insn(InsnNode("invoke-virtual {v1}, \
-%s->toString()Ljava/lang/String;" % p.get_desc()))
+                method.add_insn(InsnNode("invoke-static {v1}, \
+Ldroidbox/apimonitor/Helper;->toString(Ljava/lang/Object;)Ljava/lang/String;"))
                 method.add_insn(InsnNode("move-result-object v%d" % (ri + 1)))
                 method.add_insn(append_i)
-                index = len(method.insns)
-                cond = LabelNode(":droidbox_goto_%d" % cond_tag, index)
-                method.add_label(cond)
 
-        method.add_insn(InsnNode("const-string v%d, \"DroidBox\"" % \
-                (ri + 1)))
         method.add_insn(InsnNode("invoke-virtual {v%d}, \
 Ljava/lang/StringBuilder;->toString()Ljava/lang/String;" % ri))
-        method.add_insn(InsnNode("move-result-object v%d" % (ri + 2)))
-        method.add_insn(InsnNode("invoke-static {v%d, v%d}, \
-Landroid/util/Log;->v(Ljava/lang/String;Ljava/lang/String;)I" % \
-                                 (ri + 1, ri + 2)))
+        method.add_insn(InsnNode("move-result-object v%d" % (ri + 1)))
+        method.add_insn(InsnNode("invoke-static {v%d}, \
+Ldroidbox/apimonitor/Helper;->log(Ljava/lang/String;)V" % \
+                                 (ri + 1, )))
         if not method.ret.void:
             if method.ret.basic:
                 if method.ret.words == 1:
@@ -409,16 +402,7 @@ Ljava/lang/Exception;->printStackTrace()V"))
                 method.add_insn(InsnNode("const/4 v1, 0x0"))
         method.add_insn(InsnNode("goto :droidbox_return"))
 
-        for t in conds:
-            index = len(method.insns)
-            cond = LabelNode(":droidbox_cond_%d" % t, index)
-            method.add_label(cond)
-            method.add_insn(InsnNode("const-string v%d, \"null\"" %\
-                                     (ri + 1)))
-            method.add_insn(append_i)
-            method.add_insn(InsnNode("goto :droidbox_goto_%d" % t))
-
-        method.set_registers(para_num + ri + 2)
+        method.set_registers(para_num + ri + 1)
         stub_class.add_method(method)
 
         i = m.find('(')
@@ -470,7 +454,6 @@ append(Ljava/lang/String;)Ljava/lang/StringBuilder;" % \
         method.add_insn(append_i)
         
         # print parameters
-        conds = []
         pi = 0
         for k in range(0, para_num):
             p = method.paras[k]
@@ -492,18 +475,11 @@ Ljava/lang/String;->valueOf(%s)Ljava/lang/String;" % \
                 method.add_insn(InsnNode("move-result-object v%d" % (ri + 1)))
                 method.add_insn(append_i)
             else:
-                cond_tag = len(method.insns)
-                conds.append(cond_tag)
-                method.add_insn(InsnNode("if-eqz p%d, :droidbox_cond_%d" %\
-                                         (pi, cond_tag)))
-                method.add_insn(InsnNode("invoke-virtual {p%d}, \
-%s->toString()Ljava/lang/String;" % (pi, p.get_desc())))
+                method.add_insn(InsnNode("invoke-static {p%d}, \
+Ldroidbox/apimonitor/Helper;->toString(Ljava/lang/Object;)Ljava/lang/String;" % (pi, )))
                 pi += 1
                 method.add_insn(InsnNode("move-result-object v%d" % (ri + 1)))
                 method.add_insn(append_i)
-                index = len(method.insns)
-                cond = LabelNode(":droidbox_goto_%d" % cond_tag, index)
-                method.add_label(cond)
 
             if k < para_num - 1:
                 method.add_insn(InsnNode("const-string v%d, \" | \"" % \
@@ -535,26 +511,17 @@ Ljava/lang/String;->valueOf(%s)Ljava/lang/String;" % \
                 method.add_insn(InsnNode("move-result-object v%d" % (ri + 1)))
                 method.add_insn(append_i)
             else:
-                cond_tag = len(method.insns)
-                conds.append(cond_tag)
-                method.add_insn(InsnNode("if-eqz v1, :droidbox_cond_%d" %\
-                                         cond_tag))
-                method.add_insn(InsnNode("invoke-virtual {v1}, \
-%s->toString()Ljava/lang/String;" % p.get_desc()))
+                method.add_insn(InsnNode("invoke-static {v1}, \
+Ldroidbox/apimonitor/Helper;->toString(Ljava/lang/Object;)Ljava/lang/String;"))
                 method.add_insn(InsnNode("move-result-object v%d" % (ri + 1)))
                 method.add_insn(append_i)
-                index = len(method.insns)
-                cond = LabelNode(":droidbox_goto_%d" % cond_tag, index)
-                method.add_label(cond)
 
-        method.add_insn(InsnNode("const-string v%d, \"DroidBox\"" % \
-                (ri + 1)))
         method.add_insn(InsnNode("invoke-virtual {v%d}, \
 Ljava/lang/StringBuilder;->toString()Ljava/lang/String;" % ri))
-        method.add_insn(InsnNode("move-result-object v%d" % (ri + 2)))
-        method.add_insn(InsnNode("invoke-static {v%d, v%d}, \
-Landroid/util/Log;->v(Ljava/lang/String;Ljava/lang/String;)I" % \
-                                 (ri + 1, ri + 2)))
+        method.add_insn(InsnNode("move-result-object v%d" % (ri + 1)))
+        method.add_insn(InsnNode("invoke-static {v%d}, \
+Ldroidbox/apimonitor/Helper;->log(Ljava/lang/String;)V" % \
+                                 (ri + 1, )))
         if not method.ret.void:
             if method.ret.basic:
                 if method.ret.words == 1:
@@ -589,16 +556,7 @@ Ljava/lang/Exception;->printStackTrace()V"))
                 method.add_insn(InsnNode("const/4 v1, 0x0"))
         method.add_insn(InsnNode("goto :droidbox_return"))
 
-        for t in conds:
-            index = len(method.insns)
-            cond = LabelNode(":droidbox_cond_%d" % t, index)
-            method.add_label(cond)
-            method.add_insn(InsnNode("const-string v%d, \"null\"" %\
-                                     (ri + 1)))
-            method.add_insn(append_i)
-            method.add_insn(InsnNode("goto :droidbox_goto_%d" % t))
-
-        method.set_registers(para_num + ri + 3)
+        method.set_registers(para_num + ri + 2)
         stub_class.add_method(method)
 
         i = m.find('(')
