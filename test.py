@@ -44,18 +44,15 @@ s = smali.SmaliTree(SMALI_DIR)
 
 #API_LIST = [ "Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V"]
 API_LIST = [ #"Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V", \
-#"Landroid/content/ContentValues;->put(Ljava/lang/String;Ljava/lang/Integer;)V", \
-#"Landroid/content/ContentValues;->put(Ljava/lang/String;Ljava/lang/String;)V", \
 "static:Landroid/net/Uri;->parse(Ljava/lang/String;)Landroid/net/Uri;", \
 "constructor:Landroid/content/Intent;-><init>(Ljava/lang/String;)V", \
 "instance:Lapkil/tests/APKIL;->openFileOutput(Ljava/lang/String;I)Ljava/io/FileOutputStream;", \
 "instance:Ljava/io/OutputStreamWriter;->write(Ljava/lang/String;)V", \
 "instance:Lapkil/tests/APKIL;->openFileInput(Ljava/lang/String;)Ljava/io/FileInputStream;",
-#"instance:Ljava/io/BufferedReader;->readLine()Ljava/lang/String;", \
+"instance:Ljava/io/BufferedReader;->readLine()Ljava/lang/String;", \
 ]
 mo = monitor.APIMonitor(API_LIST)
-s.add_class(helper.get_class(HELPER_CLASS))
-mo.repackage(s)
+s = mo.inject(s)
 s.save(NEW_OUT)
 #sys.exit(0)
 

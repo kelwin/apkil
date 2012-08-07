@@ -2,12 +2,80 @@
 # -*- coding: utf-8 -*-
 
 import os
+import copy
 
 from logger import log
 from smali import ClassNode, MethodNode, FieldNode, InsnNode, \
                   TypeNode, LabelNode, TryNode, SmaliTree
 
 PKG_PREFIX = "droidbox"
+DEFAULT_HELPER = \
+r'''
+.class public Ldroidbox/apimonitor/Helper;
+.super Ljava/lang/Object;
+.method public constructor <init>()V
+.registers 1
+invoke-direct {p0}, Ljava/lang/Object;-><init>()V
+return-void
+.end method
+.method public static log(Ljava/lang/String;)V
+.registers 3
+const-string v0, "\n"
+const-string v1, "\\\\n"
+invoke-virtual {p0, v0, v1}, Ljava/lang/String;->replaceAll(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+move-result-object p0
+const-string v0, "\r"
+const-string v1, "\\\\r"
+invoke-virtual {p0, v0, v1}, Ljava/lang/String;->replaceAll(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+move-result-object p0
+const-string v0, "DroidBox"
+invoke-static {v0, p0}, Landroid/util/Log;->v(Ljava/lang/String;Ljava/lang/String;)I
+return-void
+.end method
+.method public static toString(Ljava/lang/Object;)Ljava/lang/String;
+.registers 5
+if-nez p0, :cond_5
+const-string v3, "null"
+:goto_4
+return-object v3
+:cond_5
+invoke-virtual {p0}, Ljava/lang/Object;->getClass()Ljava/lang/Class;
+move-result-object v3
+invoke-virtual {v3}, Ljava/lang/Class;->isArray()Z
+move-result v3
+if-eqz v3, :cond_3e
+new-instance v2, Ljava/lang/StringBuilder;
+const-string v3, "["
+invoke-direct {v2, v3}, Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V
+invoke-static {p0}, Ljava/lang/reflect/Array;->getLength(Ljava/lang/Object;)I
+move-result v1
+const/4 v0, 0x0
+:goto_1b
+if-lt v0, v1, :cond_27
+const-string v3, "]"
+invoke-virtual {v2, v3}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+invoke-virtual {v2}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+move-result-object v3
+goto :goto_4
+:cond_27
+invoke-static {p0, v0}, Ljava/lang/reflect/Array;->get(Ljava/lang/Object;I)Ljava/lang/Object;
+move-result-object v3
+invoke-static {v3}, Ldroidbox/apimonitor/Helper;->toString(Ljava/lang/Object;)Ljava/lang/String;
+move-result-object v3
+invoke-virtual {v2, v3}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+add-int/lit8 v3, v1, -0x1
+if-ge v0, v3, :cond_3b
+const-string v3, ", "
+invoke-virtual {v2, v3}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+:cond_3b
+add-int/lit8 v0, v0, 0x1
+goto :goto_1b
+:cond_3e
+invoke-virtual {p0}, Ljava/lang/Object;->toString()Ljava/lang/String;
+move-result-object v3
+goto :goto_4
+.end method
+'''
 
 class APIMonitor(object):
 
@@ -16,13 +84,15 @@ class APIMonitor(object):
         self.stub_classes = {}
         self.method_map = {}
         self.class_map = {}
+        self.helper = ClassNode(buf=DEFAULT_HELPER)
         for m in method_descs:
             self.add_stub_method(m)
 
     def __repr__(self):
         pass
 
-    def repackage(self, st):
+    def inject(self, smali_tree):
+        st = copy.deepcopy(smali_tree)
         for api in self.method_descs:
             segs = api.split(':', 1)
             method_type = segs[0]
@@ -35,10 +105,20 @@ class APIMonitor(object):
                             insn = m.insns[i]
                             if insn.fmt == "35c" and \
                                insn.opcode_name == "invoke-direct" and \
-                               insn.obj.method_desc == api :
+                               insn.obj.method_desc == api:
                                 insn.obj.replace("invoke-static", \
                                         self.method_map[api])
                                 r = insn.obj.registers.pop(0)
+                                m.insert_insn(InsnNode(\
+"move-result-object %s" % r), i + 1, 0)
+                            if insn.fmt == "3rc" and \
+                               insn.opcode_name == "invoke-direct/range" and \
+                               insn.obj.method_desc == api:
+                                insn.obj.replace("invoke-static/range", \
+                                        self.method_map[api])
+                                r = insn.obj.reg_start
+                                nr = r[0] + str(int(r[1:]) + 1)
+                                insn.obj.set_reg_start(nr)
                                 m.insert_insn(InsnNode(\
 "move-result-object %s" % r), i + 1, 0)
             elif method_type == "instance":
@@ -48,8 +128,13 @@ class APIMonitor(object):
                             insn = m.insns[i]
                             if insn.fmt == "35c" and \
                                insn.opcode_name == "invoke-virtual" and \
-                               insn.obj.method_desc == api :
+                               insn.obj.method_desc == api:
                                 insn.obj.replace("invoke-static", \
+                                        self.method_map[api])
+                            if insn.fmt == "3rc" and \
+                               insn.opcode_name == "invoke-virtual/range" and \
+                               insn.obj.method_desc == api:
+                                insn.obj.replace("invoke-static/range", \
                                         self.method_map[api])
             elif method_type == "static":
                 for c in st.classes:
@@ -58,14 +143,20 @@ class APIMonitor(object):
                             insn = m.insns[i]
                             if insn.fmt == "35c" and \
                                insn.opcode_name == "invoke-static" and \
-                               insn.obj.method_desc == api :
+                               insn.obj.method_desc == api:
                                 insn.obj.replace("invoke-static", \
+                                        self.method_map[api])
+                            if insn.fmt == "3rc" and \
+                               insn.opcode_name == "invoke-static/range" and \
+                               insn.obj.method_desc == api:
+                                insn.obj.replace("invoke-static/range", \
                                         self.method_map[api])
 
         for c in self.stub_classes.values():
             st.add_class(c)
 
-        #st.add_class(helper.get_class(HELPER_CLASS))
+        st.add_class(self.helper)
+        return st
 
     def add_stub_method(self, m):
         segs = m.split(':', 1)
@@ -116,13 +207,14 @@ class APIMonitor(object):
         method.add_access(["public", "static"])
 
         para_num = len(method.paras)
+        reg_num = method.get_paras_reg_num()
         ri = 1
 
-        if para_num <= 5:
+        if reg_num <= 5:
             i = "invoke-virtual {%s}, %s" % \
-                    (", ".join(["p%d" % k for k in range(para_num)]), m)
+                    (", ".join(["p%d" % k for k in range(reg_num)]), m)
         else:
-            i = "invoke-virtual/range {p0 .. p%d}, %s" % (opcode, para_num - 1, m) 
+            i = "invoke-virtual/range {p0 .. p%d}, %s" % (opcode, reg_num - 1, m) 
 
         method.add_insn(InsnNode(i)) 
 
@@ -272,18 +364,23 @@ Ljava/lang/Exception;->printStackTrace()V"))
         method.add_access(["public", "static"])
 
         para_num = len(method.paras)
+        reg_num = method.get_paras_reg_num()
         ri = 1
 
         method.add_insn(InsnNode("new-instance v1, %s" % segs[0]))
-        if para_num <= 4:
-            i = "invoke-direct {v1, %s}, %s" % \
-                    (", ".join(["p%d" % k for k in range(para_num)]), \
-                     m)
-        else:
-            print "constructor with more than 4 paras!"
-            sys.exit(1)
 
-        method.add_insn(InsnNode(i)) 
+        if reg_num <= 4:
+            i = "invoke-direct {v1, %s}, %s" % \
+                    (", ".join(["p%d" % k for k in range(reg_num)]), \
+                     m)
+            method.add_insn(InsnNode(i)) 
+        else:
+            for k in range(reg_num):
+                method.add_insn(InsnNode("move-object v%d, p%d" % (k + 2, k)))
+            i = "invoke-direct/range {v1 .. v%d}, %s" % \
+                    (reg_num + 1, )
+            method.add_insn(InsnNode(i)) 
+
         ri += 1
 
         method.add_insn(InsnNode("new-instance \
@@ -418,13 +515,14 @@ Ljava/lang/Exception;->printStackTrace()V"))
         method.add_access(["public", "static"])
 
         para_num = len(method.paras)
+        reg_num = method.get_paras_reg_num()
         ri = 1
 
-        if para_num <= 5:
+        if reg_num <= 5:
             i = "invoke-static {%s}, %s" % \
-                    (", ".join(["p%d" % k for k in range(para_num)]), m)
+                    (", ".join(["p%d" % k for k in range(reg_num)]), m)
         else:
-            i = "invoke-static/range {p0 .. p%d}, %s" % (opcode, para_num - 1, m) 
+            i = "invoke-static/range {p0 .. p%d}, %s" % (opcode, reg_num - 1, m) 
 
         method.add_insn(InsnNode(i)) 
 
@@ -562,4 +660,6 @@ Ljava/lang/Exception;->printStackTrace()V"))
         i = m.find('(')
         self.method_map[m] = "L" + PKG_PREFIX + "/" + segs[0][1:] + "->" + \
                 method.get_desc()
+
+
 

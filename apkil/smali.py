@@ -4,6 +4,7 @@
 import os
 import copy
 import sys
+import StringIO
 
 from logger import log
 
@@ -12,7 +13,12 @@ INSN_FMT = {
         "invoke-super": "35c",
         "invoke-direct": "35c",
         "invoke-static": "35c",
-        "invoke-interface": "35c"
+        "invoke-interface": "35c",
+        "invoke-virtual/range": "3rc",
+        "invoke-super/range": "3rc",
+        "invoke-direct/range": "3rc",
+        "invoke-static/range": "3rc",
+        "invoke-interface/range": "3rc"
         }
 
 BASIC_TYPES = {
@@ -84,23 +90,16 @@ class SmaliTree(object):
     def export_apk(self):
         self.save("./out")
     
-    """
-    def get_insn35c(self, opcode_name, method_desc):
-        result = []
-        for c in self.classes:
-            result.extend(c.get_insn35c(opcode_name, method_desc))
-        return result
-    """
-
 
 class ClassNode(object):
 
-    def __init__(self, filename=None):
+    def __init__(self, filename=None, buf=None):
         self.buf = []
         self.filename = "" 
         self.name = ''
         self.super_name= ''
         self.source = ''
+        self.implements = ''
         self.access = []
         self.interfaces = []
         self.fields = []
@@ -109,8 +108,8 @@ class ClassNode(object):
         self.annotations = []
         self.debugs = []
 
-        if filename:
-            self.__parse(filename)
+        if filename or buf:
+            self.__parse(filename, buf)
 
     def __repr__(self):
         return  "Class: %s %s << %s\n%s%s" % \
@@ -118,12 +117,17 @@ class ClassNode(object):
                 ''.join([repr(f) for f in self.fields]), \
                 ''.join([repr(m) for m in self.methods]))
 
-    def __parse(self, filename):
-        self.filename = filename
-        f = open(self.filename, 'r')
+    def __parse(self, filename, buf):
+        if filename:
+            self.filename = filename
+            f = open(self.filename, 'r')
+        elif buf:
+            f = StringIO.StringIO(buf)
+        else:
+            return
+
         line = f.readline()
         while line:
-            # print line
             if line.isspace():
                 line = f.readline()
                 continue
@@ -143,7 +147,7 @@ class ClassNode(object):
             elif segs[0] == ".interface":
                 pass
             elif segs[0] == ".implements":
-                pass
+                self.implements = segs[1]
             elif segs[0] == ".field":
                 self.fields.append(FieldNode(line))
             elif segs[0] == ".method":
@@ -175,7 +179,12 @@ class ClassNode(object):
         # .super
         self.buf.append(".super %s" % (self.super_name, ))
         # .source
-        # self.buf.append(".source %s" % (self.source, ))
+        if self.source:
+            self.buf.append(".source %s" % (self.source, ))
+        # .implements
+        if self.implements:
+            self.buf.append(".implements %s" % (self.implements, ))
+        # .interfaces 
         # .field
         for f in self.fields:
             f.reload()
@@ -218,13 +227,6 @@ class ClassNode(object):
         f.write('\n'.join(self.buf))
         f.close()
 
-    """
-    def get_insn35c(self, opcode_name, method_desc):
-        result = []
-        for m in self.methods:
-            result.extend(m.get_insn35c(opcode_name, method_desc))
-        return result
-    """
 
 class FieldNode(object):
 
@@ -413,6 +415,12 @@ class MethodNode(object):
     def get_desc(self):
         return self.descriptor
 
+    def get_paras_reg_num(self):
+        reg_num = 0
+        for p in self.paras:
+            reg_num += p.words
+        return reg_num
+
     def set_name(self, name):
         self.name = name
 
@@ -485,6 +493,8 @@ class InsnNode(object):
 
         if self.fmt == "35c":
             self.obj = Insn35c(line)
+        elif self.fmt == "3rc":
+            self.obj = Insn3rc(line)
 
         log("InsnNode: " + self.opcode_name + " parsed!")
 
@@ -583,6 +593,50 @@ class Insn35c(object):
     def set_regs(self, registers):
         self.registers = registers
 
+
+class Insn3rc(object):
+
+    def __init__(self, line):
+        self.buf = ""
+        self.opcode_name = ""
+        self.reg_start = ""
+        self.reg_end = ""
+        # self.reg_num = 0
+        self.method_descriptor = ""
+
+        self.__parse(line)
+
+    def __repr__(self):
+        return "%s\n" % self.buf
+
+    def __parse(self, line):
+        self.buf = line
+        tmp = self.buf
+        tmp = tmp.replace('{', '')
+        tmp = tmp.replace('}', '')
+        tmp = tmp.replace(',', '')
+        tmp = tmp.replace("..", '')
+        segs = tmp.split()
+        self.opcode_name = segs[0]
+        self.reg_start = segs[1]
+        self.reg_end = segs[2]
+        # self.reg_num = int(self.reg_start[1:]) - int(self.reg_end[1:]) + 1
+        self.method_desc = segs[-1]
+
+    def reload(self):
+        self.buf = "%s {%s .. %s}, %s" % \
+                (self.opcode_name, self.reg_start, self.reg_end, \
+                self.method_desc)
+
+    def replace(self, opcode_name, method_desc):
+        self.opcode_name = opcode_name
+        self.method_desc = method_desc
+
+    def set_reg_start(self, register):
+        self.reg_start = register
+
+    def set_reg_end(self, register):
+        self.reg_end = register
 
 class TypeNode(object):
 
