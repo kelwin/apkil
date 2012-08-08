@@ -214,7 +214,7 @@ class APIMonitor(object):
             i = "invoke-virtual {%s}, %s" % \
                     (", ".join(["p%d" % k for k in range(reg_num)]), m)
         else:
-            i = "invoke-virtual/range {p0 .. p%d}, %s" % (opcode, reg_num - 1, m) 
+            i = "invoke-virtual/range {p0 .. p%d}, %s" % (reg_num - 1, m) 
 
         method.add_insn(InsnNode(i)) 
 
@@ -378,7 +378,7 @@ Ljava/lang/Exception;->printStackTrace()V"))
             for k in range(reg_num):
                 method.add_insn(InsnNode("move-object v%d, p%d" % (k + 2, k)))
             i = "invoke-direct/range {v1 .. v%d}, %s" % \
-                    (reg_num + 1, )
+                    (reg_num + 1, m)
             method.add_insn(InsnNode(i)) 
 
         ri += 1
@@ -522,7 +522,7 @@ Ljava/lang/Exception;->printStackTrace()V"))
             i = "invoke-static {%s}, %s" % \
                     (", ".join(["p%d" % k for k in range(reg_num)]), m)
         else:
-            i = "invoke-static/range {p0 .. p%d}, %s" % (opcode, reg_num - 1, m) 
+            i = "invoke-static/range {p0 .. p%d}, %s" % (reg_num - 1, m) 
 
         method.add_insn(InsnNode(i)) 
 

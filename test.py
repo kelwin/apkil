@@ -50,6 +50,10 @@ API_LIST = [ #"Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V", \
 "instance:Ljava/io/OutputStreamWriter;->write(Ljava/lang/String;)V", \
 "instance:Lapkil/tests/APKIL;->openFileInput(Ljava/lang/String;)Ljava/io/FileInputStream;",
 "instance:Ljava/io/BufferedReader;->readLine()Ljava/lang/String;", \
+"instance:Landroid/telephony/SmsManager;->sendTextMessage(\
+Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;\
+Landroid/app/PendingIntent;Landroid/app/PendingIntent;)V", \
+"instance:Landroid/content/pm/PackageManager;->getInstalledApplications(I)Ljava/util/List;"
 ]
 mo = monitor.APIMonitor(API_LIST)
 s = mo.inject(s)
