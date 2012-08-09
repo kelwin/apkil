@@ -77,6 +77,32 @@ goto :goto_4
 .end method
 '''
 
+METHOD_TYPE_BY_OPCODE = {
+        "invoke-virtual": "instance",
+        "invoke-super": "",
+        "invoke-direct": "constructor",
+        "invoke-static": "static",
+        "invoke-interface": "",
+        "invoke-virtual/range": "instance",
+        "invoke-super/range": "",
+        "invoke-direct/range": "constructor",
+        "invoke-static/range": "static",
+        "invoke-interface/range": ""
+        }
+
+OPCODE_MAP = {
+        "invoke-virtual": "invoke-static",
+        "invoke-super": "",
+        "invoke-direct": "invoke-static",
+        "invoke-static": "invoke-static",
+        "invoke-interface": "",
+        "invoke-virtual/range": "invoke-static/range",
+        "invoke-super/range": "",
+        "invoke-direct/range": "invoke-static/range",
+        "invoke-static/range": "invoke-static/range",
+        "invoke-interface/range": ""
+        }
+
 class APIMonitor(object):
 
     def __init__(self, method_descs):
@@ -85,18 +111,65 @@ class APIMonitor(object):
         self.method_map = {}
         self.class_map = {}
         self.helper = ClassNode(buf=DEFAULT_HELPER)
+        #for m in method_descs:
+        #    self.add_stub_method(m)
         for m in method_descs:
-            self.add_stub_method(m)
+            self.method_map[m] = ""
 
     def __repr__(self):
         pass
 
     def inject(self, smali_tree):
         st = copy.deepcopy(smali_tree)
-        for api in self.method_descs:
-            segs = api.split(':', 1)
-            method_type = segs[0]
-            api = segs[1]
+        for c in st.classes:
+            for m in c.methods:
+                i = 0
+                while i < len(m.insns):
+                    insn = m.insns[i]
+                    if insn.fmt == "35c":
+                        md = insn.obj.method_desc
+                        on = insn.opcode_name
+                        if self.method_map.has_key(md):
+                            method_type = METHOD_TYPE_BY_OPCODE[on]
+                            new_on = OPCODE_MAP[on]
+                            if not self.method_map[md]:
+                                self.add_stub_method(method_type, md)
+                            if method_type == "constructor":
+                                insn.obj.replace(new_on, \
+                                        self.method_map[md])
+                                r = insn.obj.registers.pop(0)
+                                m.insert_insn(InsnNode(\
+"move-result-object %s" % r), i + 1, 0)
+                                i += 1
+                            else:
+                                insn.obj.replace(new_on, \
+                                                 self.method_map[md])
+                    elif insn.fmt == "3rc":
+                        md = insn.obj.method_desc
+                        on = insn.opcode_name
+                        if self.method_map.has_key(md):
+                            method_type = METHOD_TYPE_BY_OPCODE[on]
+                            new_on = OPCODE_MAP[on]
+                            if not self.method_map[md]:
+                                self.add_stub_method(method_type, md)
+                            if method_type == "constructor":
+                                insn.obj.replace(new_on, \
+                                        self.method_map[md])
+                                r = insn.obj.reg_start
+                                nr = r[0] + str(int(r[1:]) + 1)
+                                insn.obj.set_reg_start(nr)
+                                m.insert_insn(InsnNode(\
+"move-result-object %s" % r), i + 1, 0)
+                                i += 1
+                            else:
+                                insn.obj.replace(new_on, \
+                                                 self.method_map[md])
+                    i += 1
+
+            """
+            # segs = api.split(':', 1)
+            # method_type = segs[0]
+            # api = segs[1]
             segs = api.split("->")
             if method_type == "constructor":
                 for c in st.classes:
@@ -151,6 +224,7 @@ class APIMonitor(object):
                                insn.obj.method_desc == api:
                                 insn.obj.replace("invoke-static/range", \
                                         self.method_map[api])
+        """
 
         for c in self.stub_classes.values():
             st.add_class(c)
@@ -158,10 +232,10 @@ class APIMonitor(object):
         st.add_class(self.helper)
         return st
 
-    def add_stub_method(self, m):
-        segs = m.split(':', 1)
-        method_type = segs[0]
-        m = segs[1]
+    def add_stub_method(self, method_type, m):
+        #segs = m.split(':', 1)
+        #method_type = segs[0]
+        #m = segs[1]
         segs = m.rsplit("->", 1)
 
         if self.stub_classes.has_key(segs[0]):

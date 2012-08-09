@@ -44,16 +44,16 @@ s = smali.SmaliTree(SMALI_DIR)
 
 #API_LIST = [ "Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V"]
 API_LIST = [ #"Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V", \
-"static:Landroid/net/Uri;->parse(Ljava/lang/String;)Landroid/net/Uri;", \
-"constructor:Landroid/content/Intent;-><init>(Ljava/lang/String;)V", \
+"Landroid/net/Uri;->parse(Ljava/lang/String;)Landroid/net/Uri;", \
+"Landroid/content/Intent;-><init>(Ljava/lang/String;)V", \
 "instance:Lapkil/tests/APKIL;->openFileOutput(Ljava/lang/String;I)Ljava/io/FileOutputStream;", \
-"instance:Ljava/io/OutputStreamWriter;->write(Ljava/lang/String;)V", \
-"instance:Lapkil/tests/APKIL;->openFileInput(Ljava/lang/String;)Ljava/io/FileInputStream;",
-"instance:Ljava/io/BufferedReader;->readLine()Ljava/lang/String;", \
-"instance:Landroid/telephony/SmsManager;->sendTextMessage(\
+"Ljava/io/OutputStreamWriter;->write(Ljava/lang/String;)V", \
+"Lapkil/tests/APKIL;->openFileInput(Ljava/lang/String;)Ljava/io/FileInputStream;",
+"Ljava/io/BufferedReader;->readLine()Ljava/lang/String;", \
+"Landroid/telephony/SmsManager;->sendTextMessage(\
 Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;\
 Landroid/app/PendingIntent;Landroid/app/PendingIntent;)V", \
-"instance:Landroid/content/pm/PackageManager;->getInstalledApplications(I)Ljava/util/List;"
+"Landroid/content/pm/PackageManager;->getInstalledApplications(I)Ljava/util/List;",
 ]
 mo = monitor.APIMonitor(API_LIST)
 s = mo.inject(s)
