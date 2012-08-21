@@ -1,12 +1,29 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# Copyright 2012, The Honeynet Project. All rights reserved.
+# Author: Kun Yang <kelwya@gmail.com>
+#
+# APKIL is free software: you can redistribute it and/or modify it under 
+# the terms of version 3 of the GNU Lesser General Public License as 
+# published by the Free Software Foundation.
+#
+# APKIL is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS 
+# FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for 
+# more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with APKIL.  If not, see <http://www.gnu.org/licenses/>.
+
+import sys
 import os
 import copy
 
 from logger import log
 from smali import ClassNode, MethodNode, FieldNode, InsnNode, \
                   TypeNode, LabelNode, TryNode, SmaliTree
+from api import AndroidAPI, AndroidClass, AndroidMethod
 
 PKG_PREFIX = "droidbox"
 DEFAULT_HELPER = \
@@ -45,14 +62,14 @@ invoke-virtual {v3}, Ljava/lang/Class;->isArray()Z
 move-result v3
 if-eqz v3, :cond_3e
 new-instance v2, Ljava/lang/StringBuilder;
-const-string v3, "["
+const-string v3, "{"
 invoke-direct {v2, v3}, Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V
 invoke-static {p0}, Ljava/lang/reflect/Array;->getLength(Ljava/lang/Object;)I
 move-result v1
 const/4 v0, 0x0
 :goto_1b
 if-lt v0, v1, :cond_27
-const-string v3, "]"
+const-string v3, "}"
 invoke-virtual {v2, v3}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
 invoke-virtual {v2}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
 move-result-object v3
@@ -79,48 +96,151 @@ goto :goto_4
 
 METHOD_TYPE_BY_OPCODE = {
         "invoke-virtual": "instance",
-        "invoke-super": "",
+        "invoke-super": "instance",
         "invoke-direct": "constructor",
         "invoke-static": "static",
-        "invoke-interface": "",
+        "invoke-interface": "instance",
         "invoke-virtual/range": "instance",
-        "invoke-super/range": "",
+        "invoke-super/range": "instance",
         "invoke-direct/range": "constructor",
         "invoke-static/range": "static",
-        "invoke-interface/range": ""
+        "invoke-interface/range": "instance"
         }
 
 OPCODE_MAP = {
         "invoke-virtual": "invoke-static",
-        "invoke-super": "",
+        "invoke-super": "invoke-static",
         "invoke-direct": "invoke-static",
         "invoke-static": "invoke-static",
-        "invoke-interface": "",
+        "invoke-interface": "invoke-static",
         "invoke-virtual/range": "invoke-static/range",
-        "invoke-super/range": "",
+        "invoke-super/range": "invoke-static/range",
         "invoke-direct/range": "invoke-static/range",
         "invoke-static/range": "invoke-static/range",
-        "invoke-interface/range": ""
+        "invoke-interface/range": "invoke-static/range"
         }
 
 class APIMonitor(object):
 
-    def __init__(self, method_descs):
-        self.method_descs = method_descs
+    def __init__(self, method_descs=[], config=""):
+        self.method_descs = [] 
+        self.config = ""
         self.stub_classes = {}
         self.method_map = {}
+        self.api_dict = {}
+        self.api_name_dict = {}
         self.class_map = {}
         self.helper = ClassNode(buf=DEFAULT_HELPER)
-        #for m in method_descs:
-        #    self.add_stub_method(m)
-        for m in method_descs:
-            self.method_map[m] = ""
+        self.android_api = None 
+
+        self.method_descs = method_descs
+        if (not method_descs) and config:
+            if os.path.isfile(config):
+                f = open(config, 'r')
+                line = f.readline()
+                while line:
+                    if line.isspace():
+                        line = f.readline()
+                        continue
+                    line = line.strip()
+                    segs = line.split(None, 1)
+                    if segs[0][0] == '#':
+                        line = f.readline()
+                        continue
+                    self.method_descs.append(line)
+                    line = f.readline()
+                f.close()
+            else:
+                print "[error] Config file not found: %s" % config
+                sys.exit(1)
 
     def __repr__(self):
-        pass
+        return '\n'.join(self.method_descs)
+    
+    def load_api(self, level):
+        self.android_api = AndroidAPI()
+        data_path = os.path.join("androidlib", "android-%d.db" % level)
+        while not os.path.exists(data_path):
+            level += 1
+            data_path = os.path.join("androidlib", "android-%d.db" % level)
+        self.android_api.load(data_path)
+        return level
 
-    def inject(self, smali_tree):
+    def inject(self, smali_tree, level):
+        # get a copy of smali tree
         st = copy.deepcopy(smali_tree)
+
+        # load api database
+        print "Loading and processing API database..."
+        level = self.load_api(level)
+        # check and fix apis in API_LIST
+        new_method_descs = []
+        for m in self.method_descs:
+            ia = m.find("->")
+            c = m[:ia]
+            api_name = m[ia + 2:]
+            if not self.android_api.classes.has_key(c):
+                print "[Warn] Class not found in API-%d db: %s" % (level, m)
+            elif not self.android_api.classes[c].methods.has_key(m):
+                    if api_name[:api_name.find('(')] == "<init>":
+                        print "[Warn] Method not found in API-%d db: %s" % (level, m)
+                        continue
+                    c_obj = self.android_api.classes[c]
+                    existed = False
+                    q = c_obj.supers
+                    while q:
+                        cn = q.pop(0)
+                        c_obj = self.android_api.classes[cn]
+                        nm = c_obj.desc + "->" + api_name
+                        if c_obj.methods.has_key(nm):
+                            existed = True
+                            print "[Warn] Inferred API: %s" % (nm, )
+                            new_method_descs.append(nm)
+                        else:
+                            q.extend(self.android_api.classes[cn].supers)
+
+                    if not existed:
+                        print "[Warn] Method not found in API-%d db: %s" % (level, m)
+            else:
+                method = self.android_api.classes[c].methods[m]
+                new_method_descs.append(m)
+        self.method_descs = new_method_descs
+
+        for m in self.method_descs:
+            self.api_dict[m] = ""
+            ia = m.find("->")
+            ilb = m.find('(')
+            if m[ia + 2:ilb] != "<init>":
+                self.api_name_dict[m[ia + 2:]] = m[:ia]
+        print "Done!"
+
+        print "Injecting..."
+        for c in st.classes:
+            class_ = AndroidClass()
+            class_.isAPI = False
+
+            class_.desc = c.name
+            class_.name= c.name[1:-1].replace('/', '.')
+            class_.access = c.access
+            if "interface" in c.access:
+                class_.supers.extend(c.implements)
+            else:
+                class_.implements = c.implements
+                class_.supers.append(c.super_name)
+
+            for m in c.methods:
+                method = AndroidMethod()
+                method.isAPI = False
+                method.desc = "%s->%s" % (c.name, m.descriptor)
+                method.name = m.descriptor.split('(', 1)[0]
+                #print method.desc
+                method.sdesc = method.desc[:method.desc.rfind(')') + 1]
+                method.access = m.access
+                class_.methods[method.sdesc] = method 
+            self.android_api.add_class(class_)
+        self.android_api.build_connections(False)
+        #self.android_api.show_not_API()
+
         for c in st.classes:
             for m in c.methods:
                 i = 0
@@ -129,11 +249,13 @@ class APIMonitor(object):
                     if insn.fmt == "35c":
                         md = insn.obj.method_desc
                         on = insn.opcode_name
-                        if self.method_map.has_key(md):
+                        irb = md.find(')')
+                        smd = md[:irb + 1]
+                        if self.api_dict.has_key(smd):
                             method_type = METHOD_TYPE_BY_OPCODE[on]
                             new_on = OPCODE_MAP[on]
-                            if not self.method_map[md]:
-                                self.add_stub_method(method_type, md)
+                            if not self.method_map.has_key(md):
+                                self.add_stub_method(on, md)
                             if method_type == "constructor":
                                 insn.obj.replace(new_on, \
                                         self.method_map[md])
@@ -144,14 +266,26 @@ class APIMonitor(object):
                             else:
                                 insn.obj.replace(new_on, \
                                                  self.method_map[md])
+                        else:
+                            ia = md.find("->")
+                            cn = md[:ia]
+                            api_name = smd[ia + 2:]
+                            if self.api_name_dict.has_key(api_name):
+                                if not self.android_api.classes[cn].methods.has_key(smd):
+                                    api_cn = self.api_name_dict[api_name]
+                                    if api_cn in self.android_api.classes[cn].ancestors:
+                                        self.api_dict[smd] = ""
+                                        i -= 1
+
                     elif insn.fmt == "3rc":
                         md = insn.obj.method_desc
                         on = insn.opcode_name
-                        if self.method_map.has_key(md):
+                        smd = md[:md.rfind(')') + 1]
+                        if self.api_dict.has_key(smd):
                             method_type = METHOD_TYPE_BY_OPCODE[on]
                             new_on = OPCODE_MAP[on]
-                            if not self.method_map[md]:
-                                self.add_stub_method(method_type, md)
+                            if not self.method_map.has_key(md):
+                                self.add_stub_method(on, md)
                             if method_type == "constructor":
                                 insn.obj.replace(new_on, \
                                         self.method_map[md])
@@ -164,78 +298,31 @@ class APIMonitor(object):
                             else:
                                 insn.obj.replace(new_on, \
                                                  self.method_map[md])
+                        else:
+                            ia = md.find("->")
+                            cn = md[:ia]
+                            api_name = smd[ia + 2:]
+                            if self.api_name_dict.has_key(api_name):
+                                if not self.android_api.classes[cn].methods.has_key(smd):
+                                    api_cn = self.api_name_dict[api_name]
+                                    if api_cn in self.android_api.classes[cn].ancestors:
+                                        self.api_dict[smd] = ""
+                                        i -= 1
                     i += 1
-
-            """
-            # segs = api.split(':', 1)
-            # method_type = segs[0]
-            # api = segs[1]
-            segs = api.split("->")
-            if method_type == "constructor":
-                for c in st.classes:
-                    for m in c.methods:
-                        for i in range(len(m.insns)):
-                            insn = m.insns[i]
-                            if insn.fmt == "35c" and \
-                               insn.opcode_name == "invoke-direct" and \
-                               insn.obj.method_desc == api:
-                                insn.obj.replace("invoke-static", \
-                                        self.method_map[api])
-                                r = insn.obj.registers.pop(0)
-                                m.insert_insn(InsnNode(\
-"move-result-object %s" % r), i + 1, 0)
-                            if insn.fmt == "3rc" and \
-                               insn.opcode_name == "invoke-direct/range" and \
-                               insn.obj.method_desc == api:
-                                insn.obj.replace("invoke-static/range", \
-                                        self.method_map[api])
-                                r = insn.obj.reg_start
-                                nr = r[0] + str(int(r[1:]) + 1)
-                                insn.obj.set_reg_start(nr)
-                                m.insert_insn(InsnNode(\
-"move-result-object %s" % r), i + 1, 0)
-            elif method_type == "instance":
-                for c in st.classes:
-                    for m in c.methods:
-                        for i in range(len(m.insns)):
-                            insn = m.insns[i]
-                            if insn.fmt == "35c" and \
-                               insn.opcode_name == "invoke-virtual" and \
-                               insn.obj.method_desc == api:
-                                insn.obj.replace("invoke-static", \
-                                        self.method_map[api])
-                            if insn.fmt == "3rc" and \
-                               insn.opcode_name == "invoke-virtual/range" and \
-                               insn.obj.method_desc == api:
-                                insn.obj.replace("invoke-static/range", \
-                                        self.method_map[api])
-            elif method_type == "static":
-                for c in st.classes:
-                    for m in c.methods:
-                        for i in range(len(m.insns)):
-                            insn = m.insns[i]
-                            if insn.fmt == "35c" and \
-                               insn.opcode_name == "invoke-static" and \
-                               insn.obj.method_desc == api:
-                                insn.obj.replace("invoke-static", \
-                                        self.method_map[api])
-                            if insn.fmt == "3rc" and \
-                               insn.opcode_name == "invoke-static/range" and \
-                               insn.obj.method_desc == api:
-                                insn.obj.replace("invoke-static/range", \
-                                        self.method_map[api])
-        """
 
         for c in self.stub_classes.values():
             st.add_class(c)
 
         st.add_class(self.helper)
+        print "Done!"
+
         return st
 
-    def add_stub_method(self, method_type, m):
+    def add_stub_method(self, on, m):
         #segs = m.split(':', 1)
         #method_type = segs[0]
         #m = segs[1]
+        method_type = METHOD_TYPE_BY_OPCODE[on]
         segs = m.rsplit("->", 1)
 
         if self.stub_classes.has_key(segs[0]):
@@ -267,12 +354,12 @@ class APIMonitor(object):
         if method_type == "constructor":
             self.__add_stub_cons(stub_class, m)
         elif method_type == "instance":
-            self.__add_stub_inst(stub_class, m)
+            self.__add_stub_inst(stub_class, on, m)
         elif method_type == "static":
             self.__add_stub_static(stub_class, m)
 
 
-    def __add_stub_inst(self, stub_class, m):
+    def __add_stub_inst(self, stub_class, on, m):
         segs = m.rsplit("->", 1)
 
         method = MethodNode()
@@ -285,15 +372,18 @@ class APIMonitor(object):
         ri = 1
 
         if reg_num <= 5:
-            i = "invoke-virtual {%s}, %s" % \
-                    (", ".join(["p%d" % k for k in range(reg_num)]), m)
+            if on.find('/') >= 0:
+                on = on[:on.find('/')]
+            i = "%s {%s}, %s" % \
+                    (on, \
+                     ", ".join(["p%d" % k for k in range(reg_num)]), m)
         else:
-            i = "invoke-virtual/range {p0 .. p%d}, %s" % (reg_num - 1, m) 
+            i = "%s {p0 .. p%d}, %s" % (on, reg_num - 1, m) 
 
         method.add_insn(InsnNode(i)) 
 
         if not method.ret.void:
-            if method.ret.basic:
+            if method.ret.basic and method.ret.dim == 0:
                 if method.ret.words == 1:
                     method.add_insn(InsnNode("move-result v1"))
                     ri += 1
@@ -325,7 +415,7 @@ append(Ljava/lang/String;)Ljava/lang/StringBuilder;" % \
                                      p.get_desc())))
             method.add_insn(append_i)
 
-            if p.basic:
+            if p.basic and p.dim == 0:
                 if p.words == 1:
                     method.add_insn(InsnNode("invoke-static {p%d}, \
 Ljava/lang/String;->valueOf(%s)Ljava/lang/String;" % \
@@ -363,7 +453,7 @@ Ldroidbox/apimonitor/Helper;->toString(Ljava/lang/Object;)Ljava/lang/String;" % 
             method.add_insn(InsnNode("const-string v%d, \"%s=\"" % (ri + 1,
                                      p.get_desc())))
             method.add_insn(append_i)
-            if p.basic:
+            if p.basic and p.dim == 0:
                 if p.words == 1:
                     method.add_insn(InsnNode("invoke-static {v1}, \
 Ljava/lang/String;->valueOf(%s)Ljava/lang/String;" % \
@@ -387,7 +477,7 @@ Ljava/lang/StringBuilder;->toString()Ljava/lang/String;" % ri))
 Ldroidbox/apimonitor/Helper;->log(Ljava/lang/String;)V" % \
                                  (ri + 1, )))
         if not method.ret.void:
-            if method.ret.basic:
+            if method.ret.basic and method.ret.dim == 0:
                 if method.ret.words == 1:
                     method.add_insn(InsnNode("return v1"))
                 else:
@@ -411,7 +501,7 @@ Ldroidbox/apimonitor/Helper;->log(Ljava/lang/String;)V" % \
         method.add_insn(InsnNode("invoke-virtual {v0}, \
 Ljava/lang/Exception;->printStackTrace()V"))
         if not method.ret.void:
-            if method.ret.basic:
+            if method.ret.basic and method.ret.dim == 0:
                 if method.ret.words == 1:
                     method.add_insn(InsnNode("const/4 v1, 0x0"))
                 else:
@@ -420,7 +510,7 @@ Ljava/lang/Exception;->printStackTrace()V"))
                 method.add_insn(InsnNode("const/4 v1, 0x0"))
         method.add_insn(InsnNode("goto :droidbox_return"))
 
-        method.set_registers(para_num + ri + 2)
+        method.set_registers(reg_num + ri + 2)
         stub_class.add_method(method)
 
         i = m.find('(')
@@ -443,6 +533,7 @@ Ljava/lang/Exception;->printStackTrace()V"))
 
         method.add_insn(InsnNode("new-instance v1, %s" % segs[0]))
 
+        reg_v = 1
         if reg_num <= 4:
             i = "invoke-direct {v1, %s}, %s" % \
                     (", ".join(["p%d" % k for k in range(reg_num)]), \
@@ -454,6 +545,7 @@ Ljava/lang/Exception;->printStackTrace()V"))
             i = "invoke-direct/range {v1 .. v%d}, %s" % \
                     (reg_num + 1, m)
             method.add_insn(InsnNode(i)) 
+            reg_v = reg_num + 1
 
         ri += 1
 
@@ -478,7 +570,7 @@ append(Ljava/lang/String;)Ljava/lang/StringBuilder;" % \
                                      p.get_desc())))
             method.add_insn(append_i)
 
-            if p.basic:
+            if p.basic and p.dim == 0:
                 if p.words == 1:
                     method.add_insn(InsnNode("invoke-static {p%d}, \
 Ljava/lang/String;->valueOf(%s)Ljava/lang/String;" % \
@@ -516,7 +608,7 @@ Ldroidbox/apimonitor/Helper;->toString(Ljava/lang/Object;)Ljava/lang/String;" % 
             method.add_insn(InsnNode("const-string v%d, \"%s=\"" % (ri + 1,
                                      p.get_desc())))
             method.add_insn(append_i)
-            if p.basic:
+            if p.basic and p.dim == 0:
                 if p.words == 1:
                     method.add_insn(InsnNode("invoke-static {v1}, \
 Ljava/lang/String;->valueOf(%s)Ljava/lang/String;" % \
@@ -540,7 +632,7 @@ Ljava/lang/StringBuilder;->toString()Ljava/lang/String;" % ri))
 Ldroidbox/apimonitor/Helper;->log(Ljava/lang/String;)V" % \
                                  (ri + 1, )))
         if not method.ret.void:
-            if method.ret.basic:
+            if method.ret.basic and method.ret.dim == 0:
                 if method.ret.words == 1:
                     method.add_insn(InsnNode("return v1"))
                 else:
@@ -564,7 +656,7 @@ Ldroidbox/apimonitor/Helper;->log(Ljava/lang/String;)V" % \
         method.add_insn(InsnNode("invoke-virtual {v0}, \
 Ljava/lang/Exception;->printStackTrace()V"))
         if not method.ret.void:
-            if method.ret.basic:
+            if method.ret.basic and method.ret.dim == 0:
                 if method.ret.words == 1:
                     method.add_insn(InsnNode("const/4 v1, 0x0"))
                 else:
@@ -573,7 +665,7 @@ Ljava/lang/Exception;->printStackTrace()V"))
                 method.add_insn(InsnNode("const/4 v1, 0x0"))
         method.add_insn(InsnNode("goto :droidbox_return"))
 
-        method.set_registers(para_num + ri + 1)
+        method.set_registers(reg_num + max(ri + 1, reg_v) + 1)
         stub_class.add_method(method)
 
         i = m.find('(')
@@ -601,7 +693,7 @@ Ljava/lang/Exception;->printStackTrace()V"))
         method.add_insn(InsnNode(i)) 
 
         if not method.ret.void:
-            if method.ret.basic:
+            if method.ret.basic and method.ret.dim == 0:
                 if method.ret.words == 1:
                     method.add_insn(InsnNode("move-result v1"))
                     ri += 1
@@ -633,7 +725,7 @@ append(Ljava/lang/String;)Ljava/lang/StringBuilder;" % \
                                      p.get_desc())))
             method.add_insn(append_i)
 
-            if p.basic:
+            if p.basic and p.dim == 0:
                 if p.words == 1:
                     method.add_insn(InsnNode("invoke-static {p%d}, \
 Ljava/lang/String;->valueOf(%s)Ljava/lang/String;" % \
@@ -671,7 +763,7 @@ Ldroidbox/apimonitor/Helper;->toString(Ljava/lang/Object;)Ljava/lang/String;" % 
             method.add_insn(InsnNode("const-string v%d, \"%s=\"" % (ri + 1,
                                      p.get_desc())))
             method.add_insn(append_i)
-            if p.basic:
+            if p.basic and p.dim == 0:
                 if p.words == 1:
                     method.add_insn(InsnNode("invoke-static {v1}, \
 Ljava/lang/String;->valueOf(%s)Ljava/lang/String;" % \
@@ -695,7 +787,7 @@ Ljava/lang/StringBuilder;->toString()Ljava/lang/String;" % ri))
 Ldroidbox/apimonitor/Helper;->log(Ljava/lang/String;)V" % \
                                  (ri + 1, )))
         if not method.ret.void:
-            if method.ret.basic:
+            if method.ret.basic and method.ret.dim == 0:
                 if method.ret.words == 1:
                     method.add_insn(InsnNode("return v1"))
                 else:
@@ -719,7 +811,7 @@ Ldroidbox/apimonitor/Helper;->log(Ljava/lang/String;)V" % \
         method.add_insn(InsnNode("invoke-virtual {v0}, \
 Ljava/lang/Exception;->printStackTrace()V"))
         if not method.ret.void:
-            if method.ret.basic:
+            if method.ret.basic and method.ret.dim == 0:
                 if method.ret.words == 1:
                     method.add_insn(InsnNode("const/4 v1, 0x0"))
                 else:
@@ -728,7 +820,7 @@ Ljava/lang/Exception;->printStackTrace()V"))
                 method.add_insn(InsnNode("const/4 v1, 0x0"))
         method.add_insn(InsnNode("goto :droidbox_return"))
 
-        method.set_registers(para_num + ri + 2)
+        method.set_registers(reg_num + ri + 2)
         stub_class.add_method(method)
 
         i = m.find('(')

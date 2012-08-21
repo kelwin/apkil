@@ -1,0 +1,38 @@
+# DEFAULT API LIST
+
+# Intent
+Landroid/content/Intent;-><init>(Ljava/lang/String;)
+
+# File IO
+Landroid/content/ContextWrapper;->openFileInput(Ljava/lang/String;)
+Landroid/content/ContextWrapper;->openFileOutput(Ljava/lang/String;I)
+
+# Network IO
+Ljava/net/URL;-><init>(Ljava/lang/String;)
+Ljava/net/URL;->openConnection()
+
+# IO
+Ljava/io/OutputStreamWriter;->write(Ljava/lang/String;)
+Ljava/io/BufferedReader;->readLine()
+
+# SMS
+Landroid/telephony/SmsManager;->sendTextMessage(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Landroid/app/PendingIntent;Landroid/app/PendingIntent;)
+
+# App List
+Landroid/content/pm/PackageManager;->getInstalledApplications(I)
+
+# ID
+Landroid/telephony/TelephonyManager;->getDeviceId()
+Landroid/telephony/TelephonyManager;->getSubscriberId()
+
+# Digest
+Ljava/security/MessageDigest;->getInstance(Ljava/lang/String;)
+Ljava/security/MessageDigest;->update([B)
+Ljava/security/MessageDigest;->digest()
+
+# Cipher
+Ljavax/crypto/Cipher;->getInstance(Ljava/lang/String;)
+Ljavax/crypto/spec/SecretKeySpec;-><init>([BLjava/lang/String;)
+Ljavax/crypto/Cipher;->init(ILjava/security/Key;)
+Ljavax/crypto/Cipher;->doFinal([B)
+

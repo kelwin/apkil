@@ -1,0 +1,7 @@
+android.bluetooth.adapter.action.REQUEST_DISCOVERABLE,android.permission.BLUETOOTH
+android.bluetooth.adapter.action.REQUEST_ENABLE,android.permission.BLUETOOTH
+android.intent.action.CALL,android.permission.CALL_PHONE
+android.intent.action.CALL_PRIVILEGED,android.permission.CALL_PRIVILEGED
+android.intent.action.CALL_EMERGENCY,android.permission.CALL_PRIVILEGED
+android.search.action.GLOBAL_SEARCH,android.permission.GLOBAL_SEARCH_CONTROL
+android.intent.action.ACTION_REQUEST_SHUTDOWN,android.permission.SHUTDOWN

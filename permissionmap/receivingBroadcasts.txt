@@ -1,0 +1,23 @@
+android.provider.Telephony.SMS_RECEIVED,android.permission.RECEIVE_SMS
+android.provider.Telephony.SIM_FULL,android.permission.RECEIVE_SMS
+android.provider.Telephony.WAP_PUSH_RECEIVED,android.permission.RECEIVE_MMS and android.permission.RECEIVE_WAP_PUSH
+android.provider.Telephony.SMS_REJECTED,android.permission.RECEIVE_SMS
+android.intent.action.NEW_OUTGOING_CALL,android.permission.PROCESS_OUTGOING_CALLS
+android.intent.action.BOOT_COMPLETED,android.permission.RECEIVE_BOOT_COMPLETED
+android.bluetooth.a2dp.action.SINK_STATE_CHANGED,android.permission.BLUETOOTH
+android.intent.action.PHONE_STATE,android.permission.READ_PHONE_STATE
+android.bluetooth.adapter.action.STATE_CHANGED,android.permission.BLUETOOTH
+android.bluetooth.adapter.action.SCAN_MODE_CHANGED,android.permission.BLUETOOTH
+android.bluetooth.device.action.BOND_STATE_CHANGED,android.permission.BLUETOOTH
+android.bluetooth.device.action.UUID,android.permission.BLUETOOTH_ADMIN
+android.bluetooth.adapter.action.LOCAL_NAME_CHANGED,android.permission.BLUETOOTH
+android.bluetooth.adapter.action.DISCOVERY_STARTED,android.permission.BLUETOOTH
+android.bluetooth.adapter.action.DISCOVERY_FINISHED,android.permission.BLUETOOTH
+android.bluetooth.device.action.ACL_CONNECTED,android.permission.BLUETOOTH
+android.bluetooth.device.action.ACL_DISCONNECTED,android.permission.BLUETOOTH
+android.bluetooth.device.action.ACL_DISCONNECT_REQUESTED,android.permission.BLUETOOTH
+android.bluetooth.device.action.NAME_CHANGED,android.permission.BLUETOOTH
+android.bluetooth.device.action.FOUND,android.permission.BLUETOOTH
+android.bluetooth.device.action.CLASS_CHANGED,android.permission.BLUETOOTH
+android.intent.action.DATA_SMS_RECEIVED,android.permission.RECEIVE_SMS
+android.intent.action.NEW_OUTGOING_CALL,android.permission.PROCESS_OUTGOING_CALLS

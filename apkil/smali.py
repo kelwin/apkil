@@ -1,9 +1,25 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# Copyright 2012, The Honeynet Project. All rights reserved.
+# Author: Kun Yang <kelwya@gmail.com>
+#
+# APKIL is free software: you can redistribute it and/or modify it under 
+# the terms of version 3 of the GNU Lesser General Public License as 
+# published by the Free Software Foundation.
+#
+# APKIL is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS 
+# FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for 
+# more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with APKIL.  If not, see <http://www.gnu.org/licenses/>.
+
 import os
 import copy
 import sys
+import shutil
 import StringIO
 
 from logger import log
@@ -33,12 +49,25 @@ BASIC_TYPES = {
         'D': "double"
         }
 
+BASIC_TYPES_BY_JAVA = {
+        "void": 'V',
+        "boolean": 'Z',
+        "byte": 'B',
+        'short': 'S',
+        "char": 'C',
+        "int": 'I',
+        "long": 'J',
+        "float": 'F',
+        "double": 'D'
+        }
+
 class SmaliTree(object):
 
-    def __init__(self, foldername):
+    def __init__(self, level, foldername):
         self.foldername = ""
         self.smali_files = []
         self.classes = []
+        self.level = level
 
         self.__parse(foldername)
 
@@ -48,12 +77,13 @@ class SmaliTree(object):
                 "".join([repr(class_) for class_ in self.classes]))
 
     def __parse(self, foldername):
+        print "Parsing %s..." % foldername
         self.foldername = foldername
         for (path, dirs, files) in os.walk(self.foldername):
             for f in files:
                 name = os.path.join(path, f)
                 rel = os.path.relpath(name, self.foldername)
-                if rel.find("android") == 0:
+                if rel.find("annotation") == 0:
                     continue
                 ext = os.path.splitext(name)[1]
                 if ext != '.smali': continue
@@ -61,6 +91,7 @@ class SmaliTree(object):
                 self.classes.append(ClassNode(name))
         # print repr(self.smali_files)
         log("SmaliTree parsed!")
+        print "Done!"
 
     def get_class(self, class_name):
         result = [c for c in self.classes if c.name == class_name]
@@ -82,10 +113,13 @@ class SmaliTree(object):
         pass
 
     def save(self, new_foldername):
-        if not os.path.exists(new_foldername):
-            os.makedirs(new_foldername)
+        print "Saving %s..." % new_foldername
+        if os.path.exists(new_foldername):
+            shutil.rmtree(new_foldername)
+        os.makedirs(new_foldername)
         for c in self.classes:
             c.save(new_foldername)
+        print "Done"
 
     def export_apk(self):
         self.save("./out")
@@ -99,7 +133,7 @@ class ClassNode(object):
         self.name = ''
         self.super_name= ''
         self.source = ''
-        self.implements = ''
+        self.implements = []
         self.access = []
         self.interfaces = []
         self.fields = []
@@ -145,9 +179,10 @@ class ClassNode(object):
             elif segs[0] == ".super":
                 self.super_name = segs[1]
             elif segs[0] == ".interface":
-                pass
+                print "can't parse .interface"
+                sys.exit(1)
             elif segs[0] == ".implements":
-                self.implements = segs[1]
+                self.implements.append(segs[1])
             elif segs[0] == ".field":
                 self.fields.append(FieldNode(line))
             elif segs[0] == ".method":
@@ -165,7 +200,20 @@ class ClassNode(object):
                     line = f.readline()
                 self.methods.append(MethodNode(lines))
             elif segs[0] == ".annotation":
-                pass
+                # there may be subannotations
+                lines = [line]
+                line = f.readline()
+                while line:
+                    if line.isspace():
+                        line = f.readline()
+                        continue
+                    line = line.strip()
+                    lines.append(line)
+                    segs = line.split(None, 2)
+                    if segs[0] == ".end" and segs[1] == "annotation":
+                        break
+                    line = f.readline()
+                #self.annotations
             elif segs[0] == '#':
                 pass
             line = f.readline()
@@ -183,7 +231,8 @@ class ClassNode(object):
             self.buf.append(".source %s" % (self.source, ))
         # .implements
         if self.implements:
-            self.buf.append(".implements %s" % (self.implements, ))
+            for imp in self.implements:
+                self.buf.append(".implements %s" % (imp, ))
         # .interfaces 
         # .field
         for f in self.fields:
@@ -247,15 +296,17 @@ class FieldNode(object):
 
     # .field <access-spec> <field-name>:<descriptor> [ = <value> ]
     def __parse(self, line):
+        #log("FieldNode: " + line + " parsing")
         self.buf = line
-        segs = self.buf.split()
-        if segs[-2] != '=':
-            self.access = segs[1:-1]
-            self.name, self.descriptor = segs[-1].split(':')
+        i = self.buf.find('=')
+        segs = []
+        if i > 0:
+            segs = self.buf[:i].split()
+            self.value = self.buf[i + 1:].strip()
         else:
-            self.access = segs[1:-3]
-            self.name, self.descriptor = segs[-3].split(':')
-            self.value = segs[-1]
+            segs = self.buf.split()
+        self.access = segs[1:-1]
+        self.name, self.descriptor = segs[-1].split(':')
         log("FieldNode: " + self.name + " parsed!")
 
     def set_name(self, name):
@@ -312,6 +363,7 @@ class MethodNode(object):
         segs = self.buf[0].split()
         self.access = segs[1:-1]
         self.descriptor = segs[-1]
+        self.name = self.descriptor.split('(', 1)[0]
         self.__parse_desc()
 
         start = 1
@@ -323,7 +375,9 @@ class MethodNode(object):
 
         index = 0
         try_node_cache = []
-        for line in self.buf[start:-1]:
+        k = start
+        while k < len(self.buf) - 1:
+            line = self.buf[k]
             segs = line.split()
             # :<label-name>
             if segs[0][0] == ":":
@@ -331,12 +385,50 @@ class MethodNode(object):
                 self.labels[label.name] = label
             # .catch <classname> {<label1> .. <label2>} <label3>
             # .catchall {<label1> .. <label2>} <label3>
-            elif segs[0][0] == '.' and \
-                    (segs[0][1:] == "catch" or segs[0][1:] == "catchall"):
+            elif segs[0] == ".catch" or segs[0] == ".catchall": 
                 try_node_cache.append(line)
+            elif segs[0] == ".packed-switch" or segs[0] == ".sparse-switch":
+                lb = self.labels[self.buf[k - 1][1:]]
+                lines = [line]
+                k += 1
+                line = self.buf[k]
+                lines.append(line)
+                segs = line.split()
+                while segs[0] != ".end":
+                    k += 1
+                    line = self.buf[k]
+                    lines.append(line)
+                    segs = line.split()
+                SwitchNode(lines, lb)
+            elif segs[0] == ".array-data":
+                lb = self.labels[self.buf[k - 1][1:]]
+                lines = [line]
+                k += 1
+                line = self.buf[k]
+                lines.append(line)
+                segs = line.split()
+                while segs[0] != ".end":
+                    k += 1
+                    line = self.buf[k]
+                    lines.append(line)
+                    segs = line.split()
+                ArrayDataNode(lines, lb)
+            elif segs[0] == ".annotation":
+                k += 1
+                lines = [line]
+                line = self.buf[k]
+                lines.append(line)
+                segs = line.split()
+                while (segs[0] != ".end" or segs[1] != "annotation"):
+                    k += 1
+                    line = self.buf[k]
+                    lines.append(line)
+                    segs = line.split()
+                # parse lines
             else:
                 self.insns.append(InsnNode(line))
                 index += 1
+            k += 1
 
         for line in try_node_cache:
             segs = line.split()
@@ -393,9 +485,21 @@ class MethodNode(object):
             for t in l.tries:
                 self.buf.insert(l.index + count, t.buf)
                 count += 1
+            if l.switch:
+                for sl in l.switch.buf:
+                    self.buf.insert(l.index + count, sl)
+                    count += 1
+            if l.array_data:
+                for sl in l.array_data.buf:
+                    self.buf.insert(l.index + count, sl)
+                    count += 1
 
         if self.registers > 0:
             self.buf.insert(0, ".registers %d" % self.registers)
+        elif (not "abstract" in self.access) and \
+                (not "final" in self.access) and \
+                (not "native" in self.access):
+            self.buf.insert(0, ".registers 0")
         self.buf.insert(0, ".method %s %s" % \
                 (' '.join(self.access), self.descriptor))
         self.buf.append(".end method")
@@ -533,6 +637,67 @@ class TryNode(object):
     def reload(self):
         pass
 
+class SwitchNode(object):
+
+    def __init__(self, lines, label):
+        self.buf = [] 
+        self.type_ = ""
+        self.packed_value = ""
+        self.packed_labels = []
+        self.sparse_dict = {}
+        self.label = None
+
+        self.__parse(lines, label)
+
+    def __repr__(self):
+        return "Try: %s {%s .. %s} %s" % \
+                (self.exception, start.index, end.index, handler.index)
+
+    def __parse(self, lines, label):
+        self.buf = lines
+        self.label = label
+        segs = self.buf[0].split()
+        self.type_ = segs[0]
+        # TODO:parse more
+        label.switch = self 
+
+    def reload(self):
+        self.buf = []
+        if self.type_ == ".packed-switch":
+            self.buf.append("%s %s" % (self.type_, self.packed_value))
+            for l in self.packed_labels:
+                #l.reload()
+                self.buf.append(l.buf)
+            self.buf.append(".end packed-switch")
+        elif self.type_ == ".sparse-switch":
+            self.buf.append(".sparse-switch")
+            for value in self.sparse_dict.keys():
+                label = self.sparse_dict[value]
+                #label.reload()
+                self.buf.append("%s -> %s" % (value, label.buf))
+            self.buf.append(".end sparse-switch")
+
+
+class ArrayDataNode(object):
+
+    def __init__(self, lines, label):
+        self.buf = [] 
+        self.label = None
+
+        self.__parse(lines, label)
+
+    def __repr__(self):
+        pass
+
+    def __parse(self, lines, label):
+        self.buf = lines
+        self.label = label
+        # TODO:parse more
+        label.array_data = self 
+
+    def reload(self):
+        pass
+
 class LabelNode(object):
 
     def __init__(self, line, index):
@@ -540,6 +705,8 @@ class LabelNode(object):
         self.buf = ""
         self.index = -1
         self.tries = []
+        self.switch = None
+        self.array_data = None
 
         self.__parse(line, index)
 
@@ -555,7 +722,7 @@ class LabelNode(object):
         log("LabelNode: " + self.name + " parsed!")
 
     def reload(self):
-        pass
+        self.buf = ":%s" % self.name
 
 class Insn35c(object):
 
@@ -640,14 +807,15 @@ class Insn3rc(object):
 
 class TypeNode(object):
 
-    def __init__(self, desc):
+    def __init__(self, desc=None):
         self.type_ = ""
         self.dim = 0
         self.basic = None
         self.void = None
         self.words = 1
 
-        self.__parse(desc)
+        if desc:
+            self.__parse(desc)
 
     def __parse(self, desc):
         self.dim = desc.rfind('[') + 1
@@ -668,6 +836,21 @@ class TypeNode(object):
 
     def __repr__(self):
         return self.dim * '[' + self.type_
+
+    def load_java(self, java):
+        self.dim = java.count("[]")
+        java = java.replace("[]", '')
+        if BASIC_TYPES_BY_JAVA.has_key(java):
+            self.type_ = BASIC_TYPES_BY_JAVA[java]
+            self.basic = True
+            if self.type_ == 'V':
+                self.void = True
+            else:
+                self.void = False
+            if self.type_ == 'J' or self.type_ == 'D':
+                self.words = 2
+        else:
+            self.type_ = 'L' + java.replace('.', '/') + ';'
 
     def get_desc(self):
         return self.dim * '[' + self.type_

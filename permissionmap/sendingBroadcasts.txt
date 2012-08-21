@@ -1,0 +1,6 @@
+android.app.action.DEVICE_ADMIN_ENABLED,android.permission.BIND_DEVICE_ADMIN
+android.intent.action.EXTERNAL_APPLICATIONS_UNAVAILABLE,android.permission.BROADCAST_PACKAGE_REMOVED
+android.intent.action.PACKAGE_CHANGED,android.permission.BROADCAST_PACKAGE_REMOVED
+android.intent.action.PACKAGE_REMOVED,android.permission.BROADCAST_PACKAGE_REMOVED
+android.intent.action.UID_REMOVED,android.permission.BROADCAST_PACKAGE_REMOVED
+android.provider.Telephony.SMS_RECEIVED,android.permission.BROADCAST_SMS
