@@ -6,6 +6,7 @@ Landroid/content/Intent;-><init>(Ljava/lang/String;)
 # File IO
 Landroid/content/ContextWrapper;->openFileInput(Ljava/lang/String;)
 Landroid/content/ContextWrapper;->openFileOutput(Ljava/lang/String;I)
+Landroid/net/Uri;->parse(Ljava/lang/String;)
 
 # Network IO
 Ljava/net/URL;-><init>(Ljava/lang/String;)

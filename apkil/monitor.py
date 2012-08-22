@@ -173,6 +173,7 @@ class APIMonitor(object):
         # load api database
         print "Loading and processing API database..."
         level = self.load_api(level)
+        print "Target API Level: %d" % level
         # check and fix apis in API_LIST
         new_method_descs = []
         for m in self.method_descs:
@@ -257,12 +258,20 @@ class APIMonitor(object):
                             if not self.method_map.has_key(md):
                                 self.add_stub_method(on, md)
                             if method_type == "constructor":
+                                insn_m = copy.deepcopy(insn)
+                                insn_m.obj.replace(new_on, \
+                                        self.method_map[md])
+                                r = insn_m.obj.registers.pop(0)
+                                m.insert_insn(insn_m, i , 0)
+                                i += 1
+                                """
                                 insn.obj.replace(new_on, \
                                         self.method_map[md])
                                 r = insn.obj.registers.pop(0)
                                 m.insert_insn(InsnNode(\
 "move-result-object %s" % r), i + 1, 0)
                                 i += 1
+                                """
                             else:
                                 insn.obj.replace(new_on, \
                                                  self.method_map[md])
@@ -287,6 +296,15 @@ class APIMonitor(object):
                             if not self.method_map.has_key(md):
                                 self.add_stub_method(on, md)
                             if method_type == "constructor":
+                                insn_m = copy.deepcopy(insn)
+                                insn_m.obj.replace(new_on, \
+                                        self.method_map[md])
+                                r = insn_m.obj.reg_start
+                                nr = r[0] + str(int(r[1:]) + 1)
+                                insn_m.obj.set_reg_start(nr)
+                                m.insert_insn(insn_m, i , 0)
+                                i += 1
+                                """
                                 insn.obj.replace(new_on, \
                                         self.method_map[md])
                                 r = insn.obj.reg_start
@@ -295,6 +313,7 @@ class APIMonitor(object):
                                 m.insert_insn(InsnNode(\
 "move-result-object %s" % r), i + 1, 0)
                                 i += 1
+                                """
                             else:
                                 insn.obj.replace(new_on, \
                                                  self.method_map[md])
@@ -352,7 +371,7 @@ class APIMonitor(object):
 
         method_name = segs[1][:segs[1].find("(")]
         if method_type == "constructor":
-            self.__add_stub_cons(stub_class, m)
+            self.__add_stub_cons2(stub_class, m)
         elif method_type == "instance":
             self.__add_stub_inst(stub_class, on, m)
         elif method_type == "static":
@@ -517,6 +536,119 @@ Ljava/lang/Exception;->printStackTrace()V"))
         self.method_map[m] = "L" + PKG_PREFIX + "/" + segs[0][1:] + "->" + \
                 method.get_desc()
 
+
+    def __add_stub_cons2(self, stub_class, m):
+        segs = m.rsplit("->", 1)
+        desc = segs[1].replace("<init>", "droidbox_cons")
+        i = desc.find(')')
+        desc = desc[:i + 1] + 'V'
+        method = MethodNode()
+        method.set_desc(desc)
+        method.add_access(["public", "static"])
+
+        para_num = len(method.paras)
+        reg_num = method.get_paras_reg_num()
+        ri = 0
+
+        method.add_insn(InsnNode("new-instance \
+v%d, Ljava/lang/StringBuilder;" % ri))
+        method.add_insn(InsnNode("invoke-direct \
+{v%d}, Ljava/lang/StringBuilder;-><init>()V" % ri))
+
+        method.add_insn(InsnNode("const-string v%d,\"%s(\"" % \
+                                 (ri + 1, m.split('(', 1)[0])))
+        append_i = InsnNode("invoke-virtual \
+{v%d, v%d}, Ljava/lang/StringBuilder;->\
+append(Ljava/lang/String;)Ljava/lang/StringBuilder;" % \
+                            (ri, ri + 1))
+        method.add_insn(append_i)
+        
+        # print parameters
+        pi = 0
+        for k in range(0, para_num):
+            p = method.paras[k]
+            method.add_insn(InsnNode("const-string v%d, \"%s=\"" % (ri + 1,
+                                     p.get_desc())))
+            method.add_insn(append_i)
+
+            if p.basic and p.dim == 0:
+                if p.words == 1:
+                    method.add_insn(InsnNode("invoke-static {p%d}, \
+Ljava/lang/String;->valueOf(%s)Ljava/lang/String;" % \
+                                             (pi, p.get_desc())))
+                    pi += 1
+                else:
+                    method.add_insn(InsnNode("invoke-static \
+{p%d, p%d}, Ljava/lang/String;->valueOf(%s)Ljava/lang/String;" % \
+                        (pi, pi + 1, p.get_desc())))
+                    pi += 2
+                method.add_insn(InsnNode("move-result-object v%d" % (ri + 1)))
+                method.add_insn(append_i)
+            else:
+                method.add_insn(InsnNode("invoke-static {p%d}, \
+Ldroidbox/apimonitor/Helper;->toString(Ljava/lang/Object;)Ljava/lang/String;" % (pi, )))
+                pi += 1
+                method.add_insn(InsnNode("move-result-object v%d" % (ri + 1)))
+                method.add_insn(append_i)
+
+            if k < para_num - 1:
+                method.add_insn(InsnNode("const-string v%d, \" | \"" % \
+                                         (ri + 1)))
+                method.add_insn(append_i)
+
+        method.add_insn(InsnNode("const-string v%d, \")\"" % (ri + 1)))
+        method.add_insn(append_i)
+
+        # print return value
+        p = method.ret
+        if p.void:
+            method.add_insn(InsnNode("const-string v%d, \"%s\"" % (ri + 1,
+                                     p.get_desc())))
+            method.add_insn(append_i)
+        else:
+            method.add_insn(InsnNode("const-string v%d, \"%s=\"" % (ri + 1,
+                                     p.get_desc())))
+            method.add_insn(append_i)
+            if p.basic and p.dim == 0:
+                if p.words == 1:
+                    method.add_insn(InsnNode("invoke-static {v1}, \
+Ljava/lang/String;->valueOf(%s)Ljava/lang/String;" % \
+                                             p.get_desc()))
+                else:
+                    method.add_insn(InsnNode("invoke-static \
+{v1, v2}, Ljava/lang/String;->valueOf(%s)Ljava/lang/String;" % \
+                                             p.get_desc()))
+                method.add_insn(InsnNode("move-result-object v%d" % (ri + 1)))
+                method.add_insn(append_i)
+            else:
+                method.add_insn(InsnNode("invoke-static {v1}, \
+Ldroidbox/apimonitor/Helper;->toString(Ljava/lang/Object;)Ljava/lang/String;"))
+                method.add_insn(InsnNode("move-result-object v%d" % (ri + 1)))
+                method.add_insn(append_i)
+
+        method.add_insn(InsnNode("invoke-virtual {v%d}, \
+Ljava/lang/StringBuilder;->toString()Ljava/lang/String;" % ri))
+        method.add_insn(InsnNode("move-result-object v%d" % (ri + 1)))
+        method.add_insn(InsnNode("invoke-static {v%d}, \
+Ldroidbox/apimonitor/Helper;->log(Ljava/lang/String;)V" % \
+                                 (ri + 1, )))
+        if not method.ret.void:
+            if method.ret.basic and method.ret.dim == 0:
+                if method.ret.words == 1:
+                    method.add_insn(InsnNode("return v1"))
+                else:
+                    method.add_insn(InsnNode("return-wide v1"))
+            else:
+                method.add_insn(InsnNode("return-object v1"))
+        else:
+            method.add_insn(InsnNode("return-void"))
+
+        method.set_registers(reg_num + ri + 2)
+        stub_class.add_method(method)
+
+        i = m.find('(')
+        self.method_map[m] = "L" + PKG_PREFIX + "/" + segs[0][1:] + "->" + \
+                method.get_desc()
 
     def __add_stub_cons(self, stub_class, m):
         segs = m.rsplit("->", 1)

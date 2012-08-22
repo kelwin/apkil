@@ -30,12 +30,15 @@ parser = argparse.ArgumentParser(description=\
 parser.add_argument('-o, --output', metavar='dirpath', type=str, nargs=1,
                     help='output directory', 
                     dest='output')
+parser.add_argument('-l, --level', metavar='level', type=int, nargs=1,
+                    help='target API level for instrumentation', 
+                    dest='level')
 parser.add_argument('-a, --api', metavar='apilist', type=str,
                     default="config/default_api_collection",
                     help='config file of API list',
                     dest='api')
 parser.add_argument('-v, --version', action='version',
-                    version='DroidBoxAPIMonitor v0.1')
+                    version='DroidBoxAPIMonitor v0.1beta')
 parser.add_argument('filename', type=str, 
                     help='path of APK file')
 
@@ -73,7 +76,13 @@ if a.get_target_sdk_version():
     target_version = int(a.get_target_sdk_version())
 else:
     target_version = min_version
-level = min_version
+print "min_sdk_version=%d" % min_version
+print "target_sdk_version=%d" % target_version
+
+if (not args.level) or args.level[0] < min_version:
+    level = min_version
+else:
+    level = args.level[0]
 
 dex_file = open(dexpath, 'w')
 dex_file.write(a.get_dex())
