@@ -828,7 +828,7 @@ class TypeNode(object):
                 self.void = True
             else:
                 self.void = False
-            if self.type_ == 'J' or self.type_ == 'D':
+            if (self.type_ == 'J' or self.type_ == 'D') and self.dim == 0:
                 self.words = 2
         elif desc[0] == 'L':
             self.type_ = desc
