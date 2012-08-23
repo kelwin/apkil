@@ -2,6 +2,7 @@ APKIL is an APK Instrumentation Library.
 Supported by Google Summer of Code 2012 and The Honeynet Project.
 
 Author: Kun Yang <kelwya@gmail.com>
+Project Wiki: http://code.google.com/p/droidbox/wiki/APIMonitor
 
 apimonitor.py
     DroidBox APIMonitor script(currently beta).
