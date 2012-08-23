@@ -123,6 +123,9 @@ class AndroidAPI(object):
                 m.desc = "%s->%s%s" % (c.desc, m.name, segs[-1])
                 m.sdesc = m.desc[:m.desc.rfind(')') + 1]
                 c.methods[m.sdesc]=m
+                if not c.methods_by_name.has_key(m.name):
+                    c.methods_by_name[m.name] = []
+                c.methods_by_name[m.name].append(m.sdesc)
                 i += 1
 
             self.classes[c.desc] = c
@@ -165,6 +168,7 @@ class AndroidClass(object):
         self.ancestors = []
         self.access = []
         self.methods = {}
+        self.methods_by_name = {}
         self.desc = ""
         self.implements = []
         self.isAPI = True

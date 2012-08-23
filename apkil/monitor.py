@@ -147,7 +147,8 @@ class APIMonitor(object):
                     if segs[0][0] == '#':
                         line = f.readline()
                         continue
-                    self.method_descs.append(line)
+                    if not line in self.method_descs:
+                        self.method_descs.append(line)
                     line = f.readline()
                 f.close()
             else:
@@ -178,12 +179,19 @@ class APIMonitor(object):
         new_method_descs = []
         for m in self.method_descs:
             ia = m.find("->")
+            ilb = m.find('(')
             c = m[:ia]
-            api_name = m[ia + 2:]
+            if ilb >= 0:
+                method_name = m[ia + 2:ilb]
+                api_name = m[ia + 2:]
+            else:
+                method_name = m[ia + 2:]
+                api_name = ""
             if not self.android_api.classes.has_key(c):
                 print "[Warn] Class not found in API-%d db: %s" % (level, m)
-            elif not self.android_api.classes[c].methods.has_key(m):
-                    if api_name[:api_name.find('(')] == "<init>":
+            elif api_name:
+                if not self.android_api.classes[c].methods.has_key(m):
+                    if method_name == "<init>":
                         print "[Warn] Method not found in API-%d db: %s" % (level, m)
                         continue
                     c_obj = self.android_api.classes[c]
@@ -202,10 +210,42 @@ class APIMonitor(object):
 
                     if not existed:
                         print "[Warn] Method not found in API-%d db: %s" % (level, m)
+                else:
+                    #method = self.android_api.classes[c].methods[m]
+                    new_method_descs.append(m)
             else:
-                method = self.android_api.classes[c].methods[m]
-                new_method_descs.append(m)
-        self.method_descs = new_method_descs
+                own = False
+                if self.android_api.classes[c].methods_by_name.has_key(method_name):
+                    ms = self.android_api.classes[c].methods_by_name[method_name]
+                    new_method_descs.extend(ms)
+                    own = True
+
+                if method_name == "<init>":
+                    continue
+                c_obj = self.android_api.classes[c]
+                existed = False
+                q = c_obj.supers
+                while q:
+                    cn = q.pop(0)
+                    c_obj = self.android_api.classes[cn]
+                    if c_obj.methods_by_name.has_key(method_name):
+                        existed = True
+                        print "[Warn] Inferred API: %s->%s" % (c_obj.desc, method_name)
+                        new_method_descs.extend(c_obj.methods_by_name[method_name])
+                    else:
+                        q.extend(self.android_api.classes[cn].supers)
+
+                if (not own) and (not existed):
+                    print "[Warn] Method not found in API-%d db: %s" % (level, m)
+
+        self.method_descs = list(set(new_method_descs))
+
+        """ 
+        print "**************************"
+        self.method_descs.sort()
+        print "\n".join(self.method_descs)
+        print "**************************"
+        """
 
         for m in self.method_descs:
             self.api_dict[m] = ""

@@ -7,8 +7,6 @@ from androguard.core.bytecodes import apk
 from apkil import smali, monitor, logger 
 from subprocess import call
 
-print sys.argv[1]
-
 APK = "examples/APKILTests.apk"
 DEX = "examples/APKILTests.dex"
 SMALI_DIR = "examples/APKILTests"
