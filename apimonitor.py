@@ -88,13 +88,13 @@ dex_file = open(dexpath, 'w')
 dex_file.write(a.get_dex())
 dex_file.close()
 
-call(args=['baksmali', '-b', '-o', smalidir, dexpath])
+call(args=['java', '-jar', 'smali/baksmali.jar', '-b', '-o', smalidir, dexpath])
 s = smali.SmaliTree(level, smalidir)
 
 s = mo.inject(s, level)
 s.save(new_smalidir)
 
-call(args=['smali', '-a', str(level),
+call(args=['java', '-jar', 'smali/smali.jar', '-a', str(level),
      '-o', new_dexpath, new_smalidir])
 
 new_dex = open(new_dexpath).read();

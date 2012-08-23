@@ -23,7 +23,7 @@ dex_file = open(DEX, 'w')
 dex_file.write(a.get_dex())
 dex_file.close()
 
-call(args=['baksmali', '-b', '-o', SMALI_DIR, DEX])
+call(args=['java', '-jar', 'smali/baksmali.jar', '-b', '-o', SMALI_DIR, DEX])
 s = smali.SmaliTree(min_version, SMALI_DIR)
 
 API_LIST = [ \
@@ -46,7 +46,7 @@ mo = monitor.APIMonitor(config=API_CONFIG)
 s = mo.inject(s, min_version)
 s.save(NEW_OUT)
 
-call(args=['smali', '-a', str(min_version), '-o', NEW_DEX, NEW_OUT])
+call(args=['java', '-jar', 'smali/smali.jar', '-a', str(min_version), '-o', NEW_DEX, NEW_OUT])
 
 new_dex = open(NEW_DEX).read();
 a.new_zip(filename=NEW_APK,
