@@ -122,7 +122,8 @@ OPCODE_MAP = {
 
 class APIMonitor(object):
 
-    def __init__(self, method_descs=[], config=""):
+    def __init__(self, entries=[], config=""):
+        self.entries = []
         self.method_descs = [] 
         self.config = ""
         self.stub_classes = {}
@@ -133,8 +134,8 @@ class APIMonitor(object):
         self.helper = ClassNode(buf=DEFAULT_HELPER)
         self.android_api = None 
 
-        self.method_descs = method_descs
-        if (not method_descs) and config:
+        self.entries = entries
+        if (not entries) and config:
             if os.path.isfile(config):
                 f = open(config, 'r')
                 line = f.readline()
@@ -147,8 +148,8 @@ class APIMonitor(object):
                     if segs[0][0] == '#':
                         line = f.readline()
                         continue
-                    if not line in self.method_descs:
-                        self.method_descs.append(line)
+                    if not line in self.entries:
+                        self.entries.append(line)
                     line = f.readline()
                 f.close()
             else:
@@ -176,19 +177,33 @@ class APIMonitor(object):
         level = self.load_api(level)
         print "Target API Level: %d" % level
         # check and fix apis in API_LIST
-        new_method_descs = []
-        for m in self.method_descs:
+        method_descs = []
+        for m in self.entries:
+            c = ""
+            api_name = ""
+            method_name = ""
+
             ia = m.find("->")
             ilb = m.find('(')
-            c = m[:ia]
-            if ilb >= 0:
-                method_name = m[ia + 2:ilb]
-                api_name = m[ia + 2:]
+
+            if ia >= 0:
+                c = m[:ia]
+                if ilb >= 0:
+                    method_name = m[ia + 2:ilb]
+                    api_name = m[ia + 2:]
+                else:
+                    method_name = m[ia + 2:]
             else:
-                method_name = m[ia + 2:]
-                api_name = ""
+                c = m
+
             if not self.android_api.classes.has_key(c):
                 print "[Warn] Class not found in API-%d db: %s" % (level, m)
+                continue
+            # just class name
+            if not method_name:
+                ms = self.android_api.classes[c].methods.keys()
+                method_descs.extend(ms)
+            # full signature
             elif api_name:
                 if not self.android_api.classes[c].methods.has_key(m):
                     if method_name == "<init>":
@@ -203,21 +218,22 @@ class APIMonitor(object):
                         nm = c_obj.desc + "->" + api_name
                         if c_obj.methods.has_key(nm):
                             existed = True
-                            print "[Warn] Inferred API: %s" % (nm, )
-                            new_method_descs.append(nm)
+                            if not nm in self.entries:
+                                print "[Warn] Inferred API: %s" % (nm, )
+                                method_descs.append(nm)
                         else:
                             q.extend(self.android_api.classes[cn].supers)
 
                     if not existed:
                         print "[Warn] Method not found in API-%d db: %s" % (level, m)
                 else:
-                    #method = self.android_api.classes[c].methods[m]
-                    new_method_descs.append(m)
+                    method_descs.append(m)
+            # signature without parameters
             else:
                 own = False
                 if self.android_api.classes[c].methods_by_name.has_key(method_name):
                     ms = self.android_api.classes[c].methods_by_name[method_name]
-                    new_method_descs.extend(ms)
+                    method_descs.extend(ms)
                     own = True
 
                 if method_name == "<init>":
@@ -230,15 +246,17 @@ class APIMonitor(object):
                     c_obj = self.android_api.classes[cn]
                     if c_obj.methods_by_name.has_key(method_name):
                         existed = True
-                        print "[Warn] Inferred API: %s->%s" % (c_obj.desc, method_name)
-                        new_method_descs.extend(c_obj.methods_by_name[method_name])
+                        inferred = "%s->%s" % (c_obj.desc, method_name)
+                        if not inferred in self.entries:
+                            print "[Warn] Inferred API: %s" % inferred
+                            method_descs.extend(c_obj.methods_by_name[method_name])
                     else:
                         q.extend(self.android_api.classes[cn].supers)
 
                 if (not own) and (not existed):
                     print "[Warn] Method not found in API-%d db: %s" % (level, m)
 
-        self.method_descs = list(set(new_method_descs))
+        self.method_descs = list(set(method_descs))
 
         """ 
         print "**************************"
@@ -246,7 +264,6 @@ class APIMonitor(object):
         print "\n".join(self.method_descs)
         print "**************************"
         """
-
         for m in self.method_descs:
             self.api_dict[m] = ""
             ia = m.find("->")
@@ -320,11 +337,12 @@ class APIMonitor(object):
                             cn = md[:ia]
                             api_name = smd[ia + 2:]
                             if self.api_name_dict.has_key(api_name):
-                                if not self.android_api.classes[cn].methods.has_key(smd):
-                                    api_cn = self.api_name_dict[api_name]
-                                    if api_cn in self.android_api.classes[cn].ancestors:
-                                        self.api_dict[smd] = ""
-                                        i -= 1
+                                if self.android_api.classes.has_key(cn):
+                                    if not self.android_api.classes[cn].methods.has_key(smd):
+                                        api_cn = self.api_name_dict[api_name]
+                                        if api_cn in self.android_api.classes[cn].ancestors:
+                                            self.api_dict[smd] = ""
+                                            i -= 1
 
                     elif insn.fmt == "3rc":
                         md = insn.obj.method_desc
@@ -362,11 +380,12 @@ class APIMonitor(object):
                             cn = md[:ia]
                             api_name = smd[ia + 2:]
                             if self.api_name_dict.has_key(api_name):
-                                if not self.android_api.classes[cn].methods.has_key(smd):
-                                    api_cn = self.api_name_dict[api_name]
-                                    if api_cn in self.android_api.classes[cn].ancestors:
-                                        self.api_dict[smd] = ""
-                                        i -= 1
+                                if self.android_api.classes.has_key(cn):
+                                    if not self.android_api.classes[cn].methods.has_key(smd):
+                                        api_cn = self.api_name_dict[api_name]
+                                        if api_cn in self.android_api.classes[cn].ancestors:
+                                            self.api_dict[smd] = ""
+                                            i -= 1
                     i += 1
 
         for c in self.stub_classes.values():
