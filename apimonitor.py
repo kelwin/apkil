@@ -25,6 +25,7 @@ from androguard.core.bytecodes import apk
 from apkil import smali, monitor, logger 
 from subprocess import call
 
+working_dir=sys.path[0]
 parser = argparse.ArgumentParser(description=\
 'Repackage apk to monitor arbitrary APIs.')
 parser.add_argument('-o, --output', metavar='dirpath', type=str, nargs=1,
@@ -34,7 +35,7 @@ parser.add_argument('-l, --level', metavar='level', type=int, nargs=1,
                     help='target API level for instrumentation', 
                     dest='level')
 parser.add_argument('-a, --api', metavar='apilist', type=str,
-                    default="config/default_api_collection",
+		    default="{}/config/default_api_collection".format(working_dir),
                     help='config file of API list',
                     dest='api')
 parser.add_argument('-v, --version', action='version',
@@ -88,14 +89,15 @@ dex_file = open(dexpath, 'w')
 dex_file.write(a.get_dex())
 dex_file.close()
 
-call(args=['java', '-jar', 'smali/baksmali.jar', '-b', '-o', smalidir, dexpath])
+call(args=['java', '-jar', '{}/smali/baksmali.jar'.format(working_dir),
+	   '-b', '-o', smalidir, dexpath])
 s = smali.SmaliTree(level, smalidir)
 
 s = mo.inject(s, level)
 s.save(new_smalidir)
 
-call(args=['java', '-jar', 'smali/smali.jar', '-a', str(level),
-     '-o', new_dexpath, new_smalidir])
+call(args=['java', '-jar', '{}/smali/smali.jar'.format(working_dir),
+	   '-a', str(level), '-o', new_dexpath, new_smalidir])
 
 new_dex = open(new_dexpath).read();
 a.new_zip(filename=new_apk,
