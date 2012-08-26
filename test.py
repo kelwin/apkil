@@ -2,10 +2,13 @@
 # -*- coding: utf-8 -*-
 
 import sys
+import os
 import time
 from androguard.core.bytecodes import apk
 from apkil import smali, monitor, logger 
 from subprocess import call
+
+working_dir = sys.path[0]
 
 APK = "examples/APKILTests.apk"
 DEX = "examples/APKILTests.dex"
@@ -26,6 +29,8 @@ dex_file.close()
 call(args=['java', '-jar', 'smali/baksmali.jar', '-b', '-o', SMALI_DIR, DEX])
 s = smali.SmaliTree(min_version, SMALI_DIR)
 
+db_path = os.path.join(working_dir, "androidlib")
+
 API_LIST = [ \
 "Landroid/net/Uri;->parse(Ljava/lang/String;)", \
 "Landroid/content/Intent;-><init>(Ljava/lang/String;)", \
@@ -38,10 +43,10 @@ Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;\
 Landroid/app/PendingIntent;Landroid/app/PendingIntent;)", \
 "Landroid/content/pm/PackageManager;->getInstalledApplications(I)",
 ]
-mo = monitor.APIMonitor(API_LIST)
+mo = monitor.APIMonitor(db_path, API_LIST)
 
 API_CONFIG = "config/default_api_collection"
-mo = monitor.APIMonitor(config=API_CONFIG)
+mo = monitor.APIMonitor(db_path, config=API_CONFIG)
 
 s = mo.inject(s, min_version)
 s.save(NEW_OUT)

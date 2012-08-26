@@ -25,7 +25,9 @@ from androguard.core.bytecodes import apk
 from apkil import smali, monitor, logger 
 from subprocess import call
 
-working_dir=sys.path[0]
+working_dir = sys.path[0]
+default_api = os.path.join(working_dir, "config", "default_api_collection")
+
 parser = argparse.ArgumentParser(description=\
 'Repackage apk to monitor arbitrary APIs.')
 parser.add_argument('-o, --output', metavar='dirpath', type=str, nargs=1,
@@ -35,7 +37,7 @@ parser.add_argument('-l, --level', metavar='level', type=int, nargs=1,
                     help='target API level for instrumentation', 
                     dest='level')
 parser.add_argument('-a, --api', metavar='apilist', type=str,
-		    default="{}/config/default_api_collection".format(working_dir),
+		    default=default_api,
                     help='config file of API list',
                     dest='api')
 parser.add_argument('-v, --version', action='version',
@@ -58,7 +60,9 @@ else:
     outdir = os.path.dirname(args.filename)
 
 api_config = args.api
-mo = monitor.APIMonitor(config=api_config)
+
+db_path = os.path.join(working_dir, "androidlib")
+mo = monitor.APIMonitor(db_path, config=api_config)
 
 new_apk = os.path.join(outdir, root_name + "_new.apk")
 outdir = os.path.join(outdir, "apimonitor_out")
@@ -89,20 +93,24 @@ dex_file = open(dexpath, 'w')
 dex_file.write(a.get_dex())
 dex_file.close()
 
-call(args=['java', '-jar', '{}/smali/baksmali.jar'.format(working_dir),
+smali_jar = os.path.join(working_dir, "smali", "smali.jar")
+baksmali_jar = os.path.join(working_dir, "smali", "baksmali.jar")
+cert_path = os.path.join(working_dir, "config", "apkil.cert")
+
+call(args=['java', '-jar', baksmali_jar,
 	   '-b', '-o', smalidir, dexpath])
 s = smali.SmaliTree(level, smalidir)
 
 s = mo.inject(s, level)
 s.save(new_smalidir)
 
-call(args=['java', '-jar', '{}/smali/smali.jar'.format(working_dir),
+call(args=['java', '-jar', smali_jar,
 	   '-a', str(level), '-o', new_dexpath, new_smalidir])
 
 new_dex = open(new_dexpath).read();
 a.new_zip(filename=new_apk,
             deleted_files="(META-INF/.)", new_files = {
             "classes.dex" : new_dex } )
-apk.sign_apk(new_apk, \
-"config/apkil.cert", "apkil", "apkilapkil" )
+apk.sign_apk(new_apk, cert_path, "apkil", "apkilapkil" )
+print "NEW APK: %s" % new_apk
 

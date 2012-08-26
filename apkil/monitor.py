@@ -122,7 +122,8 @@ OPCODE_MAP = {
 
 class APIMonitor(object):
 
-    def __init__(self, entries=[], config=""):
+    def __init__(self, db_dir, entries=[], config=""):
+        self.db_dir = ""
         self.entries = []
         self.method_descs = [] 
         self.config = ""
@@ -134,6 +135,7 @@ class APIMonitor(object):
         self.helper = ClassNode(buf=DEFAULT_HELPER)
         self.android_api = None 
 
+        self.db_dir = db_dir
         self.entries = entries
         if (not entries) and config:
             if os.path.isfile(config):
@@ -160,11 +162,15 @@ class APIMonitor(object):
         return '\n'.join(self.method_descs)
     
     def load_api(self, level):
+        if level > 16:
+            level = 16
+        elif level < 3:
+            level = 3
         self.android_api = AndroidAPI()
-        data_path = os.path.join("androidlib", "android-%d.db" % level)
+        data_path = os.path.join(self.db_dir, "android-%d.db" % level)
         while not os.path.exists(data_path):
             level += 1
-            data_path = os.path.join("androidlib", "android-%d.db" % level)
+            data_path = os.path.join(self.db_dir, "android-%d.db" % level)
         self.android_api.load(data_path)
         return level
 
