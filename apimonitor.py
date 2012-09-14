@@ -55,7 +55,7 @@ if ext != ".apk":
 a = apk.APK(args.filename)
 
 if args.output:
-    outdir = args.output
+    outdir = args.output[0]
 else:
     outdir = os.path.dirname(args.filename)
 
