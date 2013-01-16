@@ -1,0 +1,6 @@
+# Compiled source #
+*.pyc
+
+# Direcorty
+examples/
+tags/

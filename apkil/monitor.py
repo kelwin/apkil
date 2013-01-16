@@ -365,7 +365,12 @@ class APIMonitor(object):
                                         self.method_map[md])
                                 r = insn_m.obj.reg_start
                                 nr = r[0] + str(int(r[1:]) + 1)
-                                insn_m.obj.set_reg_start(nr)
+                                if nr <= insn_m.obj.reg_end:
+                                    insn_m.obj.set_reg_start(nr)
+                                else:
+                                    insn_m = InsnNode("invoke-static {}, %s" % \
+                                            self.method_map[md]) 
+
                                 m.insert_insn(insn_m, i , 0)
                                 i += 1
                                 """

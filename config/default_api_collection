@@ -92,3 +92,5 @@ Ljavax/crypto/spec/SecretKeySpec;-><init>
 Ljavax/crypto/Cipher;->init
 Ljavax/crypto/Cipher;->doFinal
 
+Landroid/content/SharedPreferences/Editor;->putString
+Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)

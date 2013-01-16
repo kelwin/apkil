@@ -1,0 +1,16 @@
+# DEFAULT API LIST
+
+# Intent
+Landroid/content/Intent;
+
+# File IO
+Landroid/content/ContextWrapper;->openFileInput(Ljava/lang/String;)
+Landroid/content/ContextWrapper;->openFileOutput(Ljava/lang/String;I)
+
+# Network IO
+Ljava/net/URL;->openConnection
+
+# IO
+Ljava/io/OutputStreamWriter;
+Ljava/io/BufferedReader;
+
