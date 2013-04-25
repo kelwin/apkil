@@ -99,5 +99,5 @@ a.new_zip(filename=NEW_APK,
             deleted_files="(META-INF/.)", new_files = {
             "classes.dex" : new_dex } )
 apk.sign_apk( NEW_APK, \
-"/Users/kelwin/Dropbox/Backup/androguard", "androguard", "haimen!!" )
+"/Users/kelwin/Dropbox/Backup/androguard", "apkil", "apkilapkil" )
 
